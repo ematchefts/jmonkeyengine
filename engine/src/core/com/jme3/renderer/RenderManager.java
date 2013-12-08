@@ -47,6 +47,7 @@ import com.jme3.shader.UniformBinding;
 import com.jme3.shader.UniformBindingManager;
 import com.jme3.system.NullRenderer;
 import com.jme3.system.Timer;
+import com.jme3.util.ListMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -448,7 +449,7 @@ public class RenderManager {
      * Updates the given list of uniforms with {@link UniformBinding uniform bindings}
      * based on the current world state.
      */
-    public void updateUniformBindings(List<Uniform> params) {
+    public void updateUniformBindings(ListMap<String, Uniform> params) {
         uniformBindingManager.updateUniformBindings(params);
     }
 
