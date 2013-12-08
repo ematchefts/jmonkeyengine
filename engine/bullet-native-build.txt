@@ -175,6 +175,15 @@ Commands:
 > make
 
 -----------------------------------
+Building bullet for ANDROID
+-----------------------------------
+Requirements:
+- Android NDK: https://developer.android.com/tools/sdk/ndk/index.html
+
+Change the "ndk.dir" property in bullet-native.properties to point to where
+you have extracted the android-ndk. 
+
+-----------------------------------
 More info on building bullet
 -----------------------------------
 http://www.bulletphysics.org/mediawiki-1.5.8/index.php?title=Installation
