@@ -55,12 +55,12 @@ import java.io.IOException;
 public class SpotLight extends Light implements Savable {
 
     protected Vector3f position = new Vector3f();
-    protected Vector3f direction = new Vector3f(0,-1,0);
+    protected Vector3f direction = new Vector3f(0, -1, 0);
     protected float spotInnerAngle = FastMath.QUARTER_PI / 8;
     protected float spotOuterAngle = FastMath.QUARTER_PI / 6;
     protected float spotRange = 100;
     protected float invSpotRange = 1 / 100;
-    protected float packedAngleCos=0;
+    protected float packedAngleCos = 0;
 
     public SpotLight() {
         super();
@@ -68,15 +68,19 @@ public class SpotLight extends Light implements Savable {
     }
 
     private void computePackedCos() {
-        float innerCos=FastMath.cos(spotInnerAngle);
-        float outerCos=FastMath.cos(spotOuterAngle);
-        packedAngleCos=(int)(innerCos*1000);
+        float innerCos = FastMath.cos(spotInnerAngle);
+        float outerCos = FastMath.cos(spotOuterAngle);
+        packedAngleCos = (int) (innerCos * 1000);
         //due to approximations, very close angles can give the same cos
         //here we make sure outer cos is bellow inner cos.
-        if(((int)packedAngleCos)== ((int)(outerCos*1000)) ){
+        if (((int) packedAngleCos) == ((int) (outerCos * 1000))) {
             outerCos -= 0.001f;
         }
-        packedAngleCos+=outerCos;        
+        packedAngleCos += outerCos;
+
+        if (packedAngleCos == 0.0f) {
+            throw new IllegalArgumentException("Packed angle cosine is invalid");
+        }
     }
 
     @Override
