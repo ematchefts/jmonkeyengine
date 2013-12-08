@@ -34,8 +34,6 @@ package com.jme3.material;
 import com.jme3.asset.TextureKey;
 import com.jme3.export.*;
 import com.jme3.math.*;
-import com.jme3.renderer.GL1Renderer;
-import com.jme3.renderer.Renderer;
 import com.jme3.shader.VarType;
 import com.jme3.texture.Texture;
 import com.jme3.texture.Texture.WrapMode;
@@ -141,15 +139,15 @@ public class MatParam implements Savable, Cloneable {
         this.value = value;
     }
 
-    void apply(Renderer r, Technique technique) {
-        TechniqueDef techDef = technique.getDef();
-        if (techDef.isUsingShaders()) {
-            technique.updateUniformParam(getPrefixedName(), getVarType(), getValue());
-        }
-        if (ffBinding != null && r instanceof GL1Renderer) {
-            ((GL1Renderer) r).setFixedFuncBinding(ffBinding, getValue());
-        }
-    }
+//    void apply(Renderer r, Technique technique) {
+//        TechniqueDef techDef = technique.getDef();
+//        if (techDef.isUsingShaders()) {
+//            technique.updateUniformParam(getPrefixedName(), getVarType(), getValue());
+//        }
+//        if (ffBinding != null && r instanceof GL1Renderer) {
+//            ((GL1Renderer) r).setFixedFuncBinding(ffBinding, getValue());
+//        }
+//    }
 
     /**
      * Returns the material parameter value as it would appear in a J3M

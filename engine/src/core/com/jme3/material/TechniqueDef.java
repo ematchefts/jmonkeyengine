@@ -85,6 +85,18 @@ public class TechniqueDef implements Savable {
         MultiPass,
         
         /**
+         * Enable light rendering by using multi-pass rendering, but specifying
+         * some configuration via defines.
+         * <p>
+         * The geometry will be rendered once for each light. 
+         * Some data such as light type or whether attenuation is enabled is
+         * specified via defines instead of uniforms. The ambient light color uniform
+         * is only set to the ambient light color on the first pass, future
+         * passes have it set to black.
+         */
+        MultiPassWithDefines,
+        
+        /**
          * Enable light rendering by using the 
          * {@link Renderer#setLighting(com.jme3.light.LightList) renderer's setLighting} 
          * method.

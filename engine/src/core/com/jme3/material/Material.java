@@ -40,6 +40,7 @@ import com.jme3.material.RenderState.BlendMode;
 import com.jme3.material.RenderState.FaceCullMode;
 import com.jme3.material.TechniqueDef.LightMode;
 import com.jme3.material.TechniqueDef.ShadowMode;
+import com.jme3.material.util.LightingUtil;
 import com.jme3.math.*;
 import com.jme3.renderer.Caps;
 import com.jme3.renderer.GL1Renderer;
@@ -48,12 +49,10 @@ import com.jme3.renderer.Renderer;
 import com.jme3.renderer.queue.RenderQueue.Bucket;
 import com.jme3.scene.Geometry;
 import com.jme3.shader.Shader;
-import com.jme3.shader.Uniform;
 import com.jme3.shader.UniformBindingManager;
 import com.jme3.shader.VarType;
 import com.jme3.texture.Texture;
 import com.jme3.util.ListMap;
-import com.jme3.util.TempVars;
 import java.io.IOException;
 import java.util.*;
 import java.util.logging.Level;
@@ -75,19 +74,9 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
     // Version #2: Fixed issue with RenderState.apply*** flags not getting exported
     public static final int SAVABLE_VERSION = 2;
     private static final Logger logger = Logger.getLogger(Material.class.getName());
-    private static final RenderState additiveLight = new RenderState();
-    private static final RenderState depthOnly = new RenderState();
+    
     private static final Quaternion nullDirLight = new Quaternion(0, -1, 0, -1);
 
-    static {
-        depthOnly.setDepthTest(true);
-        depthOnly.setDepthWrite(true);
-        depthOnly.setFaceCullMode(RenderState.FaceCullMode.Back);
-        depthOnly.setColorWrite(false);
-
-        additiveLight.setBlendMode(RenderState.BlendMode.AlphaAdditive);
-        additiveLight.setDepthWrite(false);
-    }
     private AssetKey key;
     private String name;
     private MaterialDef def;
@@ -99,12 +88,12 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
     private RenderState mergedRenderState = new RenderState();
     private boolean transparent = false;
     private boolean receivesShadows = false;
+    private boolean modifiedSinceLoading = false;
     private int sortingId = -1;
-    private transient ColorRGBA ambientLightColor = new ColorRGBA(0, 0, 0, 1);
 
     public Material(MaterialDef def) {
         if (def == null) {
-            throw new NullPointerException("Material definition cannot be null");
+            throw new IllegalArgumentException("Material definition cannot be null");
         }
         this.def = def;
 
@@ -130,7 +119,7 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
      * Returns the asset key name of the asset from which this material was loaded.
      *
      * <p>This value will be <code>null</code> unless this material was loaded
-     * from a .j3m file.
+     * from a .j3m file and was not modified since the loading.
      *
      * @return Asset key name of the j3m file
      */
@@ -461,20 +450,16 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
     public void setParam(String name, VarType type, Object value) {
         checkSetParam(type, name);
         
-        if (type.isTextureType()) {
-            setTextureParam(name, type, (Texture)value);
+        MatParam val = getParam(name);
+        if (val == null) {
+            MatParam paramDef = def.getMaterialParam(name);
+            paramValues.put(name, new MatParam(type, name, value, paramDef.getFixedFuncBinding()));
         } else {
-            MatParam val = getParam(name);
-            if (val == null) {
-                MatParam paramDef = def.getMaterialParam(name);
-                paramValues.put(name, new MatParam(type, name, value, paramDef.getFixedFuncBinding()));
-            } else {
-                val.setValue(value);
-            }
-
-            if (technique != null) {
-                technique.notifyParamChanged(name, type, value);
-            }
+            val.setValue(value);
+        }
+        
+        if (technique != null) {
+            technique.notifyParamChanged(name, type, value);
         }
     }
 
@@ -653,18 +638,6 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
         setParam(name, VarType.Vector4, value);
     }
 
-    private ColorRGBA getAmbientColor(LightList lightList) {
-        ambientLightColor.set(0, 0, 0, 1);
-        for (int j = 0; j < lightList.size(); j++) {
-            Light l = lightList.get(j);
-            if (l instanceof AmbientLight) {
-                ambientLightColor.addLocal(l.getColor());
-            }
-        }
-        ambientLightColor.a = 1.0f;
-        return ambientLightColor;
-    }
-
     /**
      * Uploads the lights in the light list as two uniform arrays.<br/><br/> *
      * <p>
@@ -678,7 +651,8 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
      * g_LightPosition.w is the inverse radius (1/r) of the light (for
      * attenuation) <br/> </p>
      */
-    protected void updateLightListUniforms(Shader shader, Geometry g, int numLights) {
+    protected void updateSinglePassUniforms(Shader shader, Geometry g, int numLights) {
+        /*
         if (numLights == 0) { // this shader does not do lighting, ignore.
             return;
         }
@@ -748,109 +722,7 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
 
             lightIndex++;
         }
-    }
-
-    protected void renderMultipassLighting(Shader shader, Geometry g, RenderManager rm) {
-
-        Renderer r = rm.getRenderer();
-        LightList lightList = g.getWorldLightList();
-        Uniform lightDir = shader.getUniform("g_LightDirection");
-        Uniform lightColor = shader.getUniform("g_LightColor");
-        Uniform lightPos = shader.getUniform("g_LightPosition");
-        Uniform ambientColor = shader.getUniform("g_AmbientLightColor");
-        boolean isFirstLight = true;
-        boolean isSecondLight = false;
-
-        for (int i = 0; i < lightList.size(); i++) {
-            Light l = lightList.get(i);
-            if (l instanceof AmbientLight) {
-                continue;
-            }
-
-            if (isFirstLight) {
-                // set ambient color for first light only
-                ambientColor.setValue(VarType.Vector4, getAmbientColor(lightList));
-                isFirstLight = false;
-                isSecondLight = true;
-            } else if (isSecondLight) {
-                ambientColor.setValue(VarType.Vector4, ColorRGBA.Black);
-                // apply additive blending for 2nd and future lights
-                r.applyRenderState(additiveLight);
-                isSecondLight = false;
-            }
-
-            TempVars vars = TempVars.get();
-            Quaternion tmpLightDirection = vars.quat1;
-            Quaternion tmpLightPosition = vars.quat2;
-            ColorRGBA tmpLightColor = vars.color;
-            Vector4f tmpVec = vars.vect4f;
-
-            ColorRGBA color = l.getColor();
-            tmpLightColor.set(color);
-            tmpLightColor.a = l.getType().getId();
-            lightColor.setValue(VarType.Vector4, tmpLightColor);
-
-            switch (l.getType()) {
-                case Directional:
-                    DirectionalLight dl = (DirectionalLight) l;
-                    Vector3f dir = dl.getDirection();
-                    //FIXME : there is an inconstencie here due to backward 
-                    //compatibility of the lighting shader.
-                    //The directional light direction is passed in the 
-                    //LightPosition uniform. The lightinf shader needs to be 
-                    //reworked though in order to fix this.
-                    tmpLightPosition.set(dir.getX(), dir.getY(), dir.getZ(), -1);
-                    lightPos.setValue(VarType.Vector4, tmpLightPosition);
-                    tmpLightDirection.set(0, 0, 0, 0);
-                    lightDir.setValue(VarType.Vector4, tmpLightDirection);
-                    break;
-                case Point:
-                    PointLight pl = (PointLight) l;
-                    Vector3f pos = pl.getPosition();
-                    float invRadius = pl.getInvRadius();
-
-                    tmpLightPosition.set(pos.getX(), pos.getY(), pos.getZ(), invRadius);
-                    lightPos.setValue(VarType.Vector4, tmpLightPosition);
-                    tmpLightDirection.set(0, 0, 0, 0);
-                    lightDir.setValue(VarType.Vector4, tmpLightDirection);
-                    break;
-                case Spot:
-                    SpotLight sl = (SpotLight) l;
-                    Vector3f pos2 = sl.getPosition();
-                    Vector3f dir2 = sl.getDirection();
-                    float invRange = sl.getInvSpotRange();
-                    float spotAngleCos = sl.getPackedAngleCos();
-
-                    tmpLightPosition.set(pos2.getX(), pos2.getY(), pos2.getZ(), invRange);
-                    lightPos.setValue(VarType.Vector4, tmpLightPosition);
-
-                    //We transform the spot directoin in view space here to save 5 varying later in the lighting shader
-                    //one vec4 less and a vec4 that becomes a vec3
-                    //the downside is that spotAngleCos decoding happen now in the frag shader.
-                    tmpVec.set(dir2.getX(), dir2.getY(), dir2.getZ(), 0);
-                    rm.getCurrentCamera().getViewMatrix().mult(tmpVec, tmpVec);
-                    tmpLightDirection.set(tmpVec.getX(), tmpVec.getY(), tmpVec.getZ(), spotAngleCos);
-
-                    lightDir.setValue(VarType.Vector4, tmpLightDirection);
-
-                    break;
-                default:
-                    throw new UnsupportedOperationException("Unknown type of light: " + l.getType());
-            }
-            vars.release();
-            r.setShader(shader);
-            r.renderMesh(g.getMesh(), g.getLodLevel(), 1);
-        }
-
-        if (isFirstLight && lightList.size() > 0) {
-            // There are only ambient lights in the scene. Render
-            // a dummy "normal light" so we can see the ambient
-            ambientColor.setValue(VarType.Vector4, getAmbientColor(lightList));
-            lightColor.setValue(VarType.Vector4, ColorRGBA.BlackNoAlpha);
-            lightPos.setValue(VarType.Vector4, nullDirLight);
-            r.setShader(shader);
-            r.renderMesh(g.getMesh(), g.getLodLevel(), 1);
-        }
+        */
     }
 
     /**
@@ -879,10 +751,10 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
     public void selectTechnique(String name, RenderManager renderManager) {
         // check if already created
         Technique tech = techniques.get(name);
-        // When choosing technique, we choose one that
-        // supports all the caps.
-        EnumSet<Caps> rendererCaps = renderManager.getRenderer().getCaps();
         if (tech == null) {
+            // When choosing technique, we choose one that
+            // supports all the caps.
+            EnumSet<Caps> rendererCaps = renderManager.getRenderer().getCaps();
 
             if (name.equals("Default")) {
                 List<TechniqueDef> techDefs = def.getDefaultTechniques();
@@ -929,17 +801,17 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
         }
 
         technique = tech;
-        tech.makeCurrent(def.getAssetManager(), true, rendererCaps);
+        tech.makeCurrent(def.getAssetManager(), true);
 
         // shader was changed
         sortingId = -1;
     }
 
-    private void autoSelectTechnique(RenderManager rm) {
+    public void autoSelectTechnique(RenderManager rm) {
         if (technique == null) {
             selectTechnique("Default", rm);
         } else {
-            technique.makeCurrent(def.getAssetManager(), false, rm.getRenderer().getCaps());
+            technique.makeCurrent(def.getAssetManager(), false);
         }
     }
 
@@ -953,51 +825,64 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
      * @param rm The render manager to preload for
      */
     public void preload(RenderManager rm) {
-        autoSelectTechnique(rm);
+//        throw new UnsupportedOperationException();
+//        autoSelectTechnique(rm);
+//
+//        Renderer r = rm.getRenderer();
+//        TechniqueDef techDef = technique.getDef();
+//
+//        Collection<MatParam> params = paramValues.values();
+//        for (MatParam param : params) {
+//            if (param instanceof MatParamTexture) {
+//                MatParamTexture texParam = (MatParamTexture) param;
+//                r.setTexture(0, texParam.getTextureValue());
+//            } else {
+////                if (!techDef.isUsingShaders()) {
+////                    continue;
+////                }
+////                technique.updateUniformParam(param.getName(), param.getVarType(), param.getValue());
+//            }
+//        }
+//
+//        Shader shader = technique.acquireUnlitShader(null)
+//        if (techDef.isUsingShaders()) {
+//            r.setShader(shader);
+//        }
+    }
 
-        Renderer r = rm.getRenderer();
-        TechniqueDef techDef = technique.getDef();
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getClass().getSimpleName()).append("[");
+        sb.append("name=").append(getName());
+        sb.append(",definition=").append(def.getName()).append("]");
+        return sb.toString();
+    }
 
-        Collection<MatParam> params = paramValues.values();
-        for (MatParam param : params) {
-            if (param instanceof MatParamTexture) {
-                MatParamTexture texParam = (MatParamTexture) param;
-                r.setTexture(0, texParam.getTextureValue());
+    /**
+     * (Internal use only) Returns the material's merged render state, this
+     * is highly dependent on the state of the material and the 
+     * {@link RenderManager}.
+     * Modifying the returned render state is not permitted, it must 
+     * only be applied on the {@link Renderer} as needed.
+     */
+    public RenderState getMergedRenderState(RenderManager renderManager) {
+        if (renderManager.getForcedRenderState() != null) {
+            return renderManager.getForcedRenderState();
+        } else {
+            TechniqueDef techniqueDef = technique.getDef();
+            if (techniqueDef.getRenderState() != null) {
+                return techniqueDef.getRenderState().copyMergedTo(additionalState, mergedRenderState);
             } else {
-                if (!techDef.isUsingShaders()) {
-                    continue;
-                }
-
-                technique.updateUniformParam(param.getName(), param.getVarType(), param.getValue());
-            }
-        }
-
-        Shader shader = technique.getShader();
-        if (techDef.isUsingShaders()) {
-            r.setShader(shader);
-        }
-    }
-
-    private void clearUniformsSetByCurrent(Shader shader) {
-        ListMap<String, Uniform> uniforms = shader.getUniformMap();
-        int size = uniforms.size();
-        for (int i = 0; i < size; i++) {
-            Uniform u = uniforms.getValue(i);
-            u.clearSetByCurrentMaterial();
-        }
-    }
-
-    private void resetUniformsNotSetByCurrent(Shader shader) {
-        ListMap<String, Uniform> uniforms = shader.getUniformMap();
-        int size = uniforms.size();
-        for (int i = 0; i < size; i++) {
-            Uniform u = uniforms.getValue(i);
-            if (!u.isSetByCurrentMaterial()) {
-                u.clearValue();
+                return RenderState.DEFAULT.copyMergedTo(additionalState, mergedRenderState);
             }
         }
     }
-
+    
+    public void render(Geometry geom, RenderManager renderManager) {
+        render(geom, renderManager, null);
+    }
+    
     /**
      * Called by {@link RenderManager} to render the geometry by
      * using this material.
@@ -1053,74 +938,53 @@ public class Material implements CloneableSmartAsset, Cloneable, Savable {
      * </ul>
      *
      * @param geom The geometry to render
-     * @param rm The render manager requesting the rendering
+     * @param renderManager The render manager requesting the rendering
      */
-    public void render(Geometry geom, RenderManager rm) {
-        autoSelectTechnique(rm);
+    public void render(Geometry geom, RenderManager renderManager, Light light) {
+        autoSelectTechnique(renderManager);
 
-        Renderer r = rm.getRenderer();
-
-        TechniqueDef techDef = technique.getDef();
-
-        if (techDef.getLightMode() == LightMode.MultiPass
-                && geom.getWorldLightList().size() == 0) {
-            return;
-        }
-
-        if (rm.getForcedRenderState() != null) {
-            r.applyRenderState(rm.getForcedRenderState());
+        //System.out.println(geom.getName() + " " + light.getType() + " " + lightIndex);
+        
+        TechniqueDef techniqueDef = technique.getDef();
+        if (!techniqueDef.isUsingShaders()) {
+            switch (techniqueDef.getLightMode()) {
+                case Disable:
+                    LightingUtil.renderFixedFunc(renderManager, this, technique, geom, false);
+                    break;
+                case FixedPipeline:
+                    LightingUtil.renderFixedFunc(renderManager, this, technique, geom, true);
+                    break;
+                default:
+                    throw new UnsupportedOperationException("Light mode " + techniqueDef.getLightMode() + 
+                                                            " not supported in fixed function mode");
+            }
         } else {
-            if (techDef.getRenderState() != null) {
-                r.applyRenderState(techDef.getRenderState().copyMergedTo(additionalState, mergedRenderState));
-            } else {
-                r.applyRenderState(RenderState.DEFAULT.copyMergedTo(additionalState, mergedRenderState));
+            switch (techniqueDef.getLightMode()) {
+                case Disable:
+                    LightingUtil.renderNoLighting(renderManager, this, technique, geom);
+                    break;
+                case SinglePass:
+                    LightingUtil.renderSinglePassLighting(renderManager, this, technique, geom);
+                    break;
+                case MultiPassWithDefines:
+                    // Render unsorted multipass
+                    LightingUtil.renderMultiPassLighting(renderManager, this, technique, geom, true);
+                    break;
+                case MultiPass:
+                    if (light == null) {
+                        // Render unsorted multipass
+                        LightingUtil.renderMultiPassLighting(renderManager, this, technique, geom, true);
+                    } else {
+                        // Render sorted multipass
+                        //LightingUtil.renderOneLight(renderManager, this, technique, geom, light, geom.passIndex++);
+                        throw new UnsupportedOperationException();
+                    }
+                    break;
+                default:
+                    throw new UnsupportedOperationException("Light mode " + techniqueDef.getLightMode() + 
+                                                            " not supported with shaders");
             }
         }
-
-
-        // update camera and world matrices
-        // NOTE: setWorldTransform should have been called already
-        if (techDef.isUsingShaders()) {
-            // reset unchanged uniform flag
-            clearUniformsSetByCurrent(technique.getShader());
-            rm.updateUniformBindings(technique.getWorldBindUniforms());
-        }
-
-        // setup textures and uniforms
-        for (int i = 0; i < paramValues.size(); i++) {
-            MatParam param = paramValues.getValue(i);
-            param.apply(r, technique);
-        }
-
-        Shader shader = technique.getShader();
-
-        // send lighting information, if needed
-        switch (techDef.getLightMode()) {
-            case Disable:
-                r.setLighting(null);
-                break;
-            case SinglePass:
-                updateLightListUniforms(shader, geom, 4);
-                break;
-            case FixedPipeline:
-                r.setLighting(geom.getWorldLightList());
-                break;
-            case MultiPass:
-                // NOTE: Special case!
-                resetUniformsNotSetByCurrent(shader);
-                renderMultipassLighting(shader, geom, rm);
-                // very important, notice the return statement!
-                return;
-        }
-
-        // upload and bind shader
-        if (techDef.isUsingShaders()) {
-            // any unset uniforms will be set to 0
-            resetUniformsNotSetByCurrent(shader);
-            r.setShader(shader);
-        }
-
-        r.renderMesh(geom.getMesh(), geom.getLodLevel(), 1);
     }
 
     public void write(JmeExporter ex) throws IOException {

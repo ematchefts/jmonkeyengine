@@ -36,6 +36,7 @@ import com.jme3.math.*;
 import com.jme3.renderer.Camera;
 import com.jme3.renderer.RenderManager;
 import com.jme3.system.Timer;
+import com.jme3.util.ListMap;
 import java.util.List;
 
 /**
@@ -83,9 +84,12 @@ public class UniformBindingManager {
      * Updates the given list of uniforms with {@link UniformBinding uniform bindings}
      * based on the current world state.
      */
-    public void updateUniformBindings(List<Uniform> params) {
+    public void updateUniformBindings(ListMap<String, Uniform> params) {
         for (int i = 0; i < params.size(); i++) {
-            Uniform u = params.get(i);
+            Uniform u = params.getValue(i);
+            if (u.getBinding() == null) {
+                continue;
+            }
             switch (u.getBinding()) {
                 case WorldMatrix:
                     u.setValue(VarType.Matrix4, worldMatrix);

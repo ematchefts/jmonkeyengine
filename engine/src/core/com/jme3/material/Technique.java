@@ -32,12 +32,12 @@
 package com.jme3.material;
 
 import com.jme3.asset.AssetManager;
-import com.jme3.renderer.Caps;
+import com.jme3.material.TechniqueDef.LightMode;
+import com.jme3.material.util.LightingConstants;
 import com.jme3.shader.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
-import java.util.EnumSet;
-import java.util.List;
 import java.util.logging.Logger;
 
 /**
@@ -46,11 +46,13 @@ import java.util.logging.Logger;
 public class Technique /* implements Savable */ {
 
     private static final Logger logger = Logger.getLogger(Technique.class.getName());
+    
     private TechniqueDef def;
     private Material owner;
-    private ArrayList<Uniform> worldBindUniforms;
-    private DefineList defines;
-    private Shader shader;
+//    private ArrayList<Uniform> worldBindUniforms;
+    private DefineList allDefines;
+    private Shader unlitShader;
+    private Shader[] lightShaders;
     private boolean needReload = true;
 
     /**
@@ -64,8 +66,11 @@ public class Technique /* implements Savable */ {
         this.owner = owner;
         this.def = def;
         if (def.isUsingShaders()) {
-            this.worldBindUniforms = new ArrayList<Uniform>();
-            this.defines = new DefineList();
+//            this.worldBindUniforms = new ArrayList<Uniform>();
+            this.allDefines = new DefineList();
+            if (def.getLightMode() != LightMode.Disable) {
+                lightShaders = new Shader[LightingConstants.MAX_FLAGS];
+            }
         }
     }
 
@@ -86,6 +91,16 @@ public class Technique /* implements Savable */ {
         return def;
     }
 
+    public Shader acquireUnlitShader(AssetManager assetManager) {
+        if (unlitShader == null) {
+            unlitShader = loadShader(assetManager);
+            System.out.println("== Technique.acquireUnlitShader() - loading shader for " + owner + " ==");
+            System.out.println("Technique: " + def.getName());
+            System.out.println("Defines: " + allDefines);
+        }
+        return unlitShader;
+    }
+    
     /**
      * Returns the shader currently used by this technique instance.
      * <p>
@@ -94,19 +109,50 @@ public class Technique /* implements Savable */ {
      * 
      * @return the shader currently used by this technique instance.
      */
+    @Deprecated
     public Shader getShader() {
-        return shader;
+        return null; //shader;
+    }
+    
+    /**
+     * @return The current defines that are used for the technique, based 
+     * on the material's current parameters.
+     * @deprecated Defines change depending on the light type or number of lights used..
+     */
+    @Deprecated
+    public DefineList getAllDefines() {
+        return allDefines;
+    }
+    
+    public Shader acquireLightShader(AssetManager assetManager, int lightFlags) {
+        Shader lightShader = lightShaders[lightFlags];
+        if (lightShader == null) {
+            if (def.getLightMode() == LightMode.MultiPass) {
+                allDefines.set("NUMLIGHTS", VarType.Int, 1);
+                allDefines.set("LIGHTTYPE", VarType.Int, lightFlags & LightingConstants.MASK_LIGHTTYPE);
+                allDefines.set("ATTENUATION", VarType.Int, ((lightFlags & LightingConstants.MASK_ATTENUATION) != 0) ? 1 : 0);
+            } else {
+                allDefines.set("NUMLIGHTS", VarType.Int, LightingConstants.MAX_LIGHTS);
+            }
+            System.out.println("== Technique.acquireLightShader() - loading shader for " + owner + " ==");
+            System.out.println("Technique: " + def.getName());
+            System.out.println("Defines: " + allDefines);
+            System.out.println("Flags: 0x" + Integer.toHexString(lightFlags));
+            lightShader = loadShader(assetManager);
+            lightShaders[lightFlags] = lightShader;
+        }
+        return lightShader;
     }
 
-    /**
-     * Returns a list of uniforms that implements the world parameters
-     * that were requested by the material definition.
-     * 
-     * @return a list of uniforms implementing the world parameters.
-     */
-    public List<Uniform> getWorldBindUniforms() {
-        return worldBindUniforms;
-    }
+//    /**
+//     * Returns a list of uniforms that implements the world parameters
+//     * that were requested by the material definition.
+//     * 
+//     * @return a list of uniforms implementing the world parameters.
+//     */
+//    public List<Uniform> getWorldBindUniforms() {
+//        return worldBindUniforms;
+//    }
 
     /**
      * Called by the material to tell the technique a parameter was modified.
@@ -124,32 +170,11 @@ public class Technique /* implements Savable */ {
             
             if (value == null) {
                 // Clear the define.
-                needReload = defines.remove(defineName) || needReload;
+                needReload = allDefines.remove(defineName) || needReload;
             } else {
                 // Set the define.
-                needReload = defines.set(defineName, type, value) || needReload;
+                needReload = allDefines.set(defineName, type, value) || needReload;
             }
-        }
-    }
-
-    void updateUniformParam(String paramName, VarType type, Object value) {
-        if (paramName == null) {
-            throw new IllegalArgumentException();
-        }
-        
-        Uniform u = shader.getUniform(paramName);
-        switch (type) {
-            case TextureBuffer:
-            case Texture2D: // fall intentional
-            case Texture3D:
-            case TextureArray:
-            case TextureCubeMap:
-            case Int:
-                u.setValue(VarType.Int, value);
-                break;
-            default:
-                u.setValue(type, value);
-                break;
         }
     }
 
@@ -172,7 +197,7 @@ public class Technique /* implements Savable */ {
      * 
      * @param assetManager The asset manager to use for loading shaders.
      */
-    public void makeCurrent(AssetManager assetManager, boolean techniqueSwitched, EnumSet<Caps> rendererCaps) {
+    public void makeCurrent(AssetManager assetManager, boolean techniqueSwitched) {
         if (!def.isUsingShaders()) {
             // No shaders are used, no processing is neccessary. 
             return;
@@ -181,79 +206,67 @@ public class Technique /* implements Savable */ {
         if (techniqueSwitched) {
             // If the technique was switched, check if the define list changed
             // based on material parameters.
-            
+            DefineList newDefines = new DefineList();
+            newDefines.addFrom(def.getShaderPresetDefines());
             Collection<MatParam> params = owner.getParams();
-                        
-            if (!defines.equalsParams(params,def)) {
-                // Defines were changed, update define list
-                defines.clear();
-                for (MatParam param : params) {
-                    String defineName = def.getShaderParamDefine(param.getName());
-                    if (defineName != null) {
-                        defines.set(defineName, param.getVarType(), param.getValue());
-                    }
+            for (MatParam param : params) {
+                String defineName = def.getShaderParamDefine(param.getName());
+                if (defineName != null) {
+                    newDefines.set(defineName, param.getVarType(), param.getValue());
                 }
+            }
+            
+            // These are set dynamically (during lighting) and therefore do not apply
+            // to the comparison.
+            allDefines.remove("LIGHTTYPE");
+            allDefines.remove("ATTENUATION");
+            allDefines.remove("NUMLIGHTS");
+            
+            if (!allDefines.equals(newDefines)) {
+                System.out.println(" == Technique.makeCurrent() - reloading shader for " + owner + " ==");
+                System.out.println("Technique: " + def.getName());
+                System.out.println("Old defines: " + allDefines + ", New defines: " + newDefines);
+                // Defines were changed, update define list
+                allDefines = newDefines;
                 needReload = true;
             }
         }
 
         if (needReload) {
-            loadShader(assetManager,rendererCaps);
+            if (lightShaders != null) {
+                // We are using the light shaders.. Gotta reload them.
+                Arrays.fill(lightShaders, null);
+            } else {
+                // We are using unlit shaders.. Gotta reload them.
+                unlitShader = null;
+            }
+            needReload = false;
         }
     }
 
-    private void loadShader(AssetManager manager,EnumSet<Caps> rendererCaps) {
-        
+    private Shader loadShader(AssetManager assetManager) {
+        // Load the shader from the cache.
         ShaderKey key = new ShaderKey(def.getVertexShaderName(),
-                    def.getFragmentShaderName(),
-                    getAllDefines(),
-                    def.getVertexShaderLanguage(),
-                    def.getFragmentShaderLanguage());
+                                      def.getFragmentShaderName(),
+                                      allDefines.clone(),
+                                      def.getVertexShaderLanguage(),
+                                      def.getFragmentShaderLanguage());
         
-        if (getDef().isUsingShaderNodes()) {                 
-           manager.getShaderGenerator(rendererCaps).initialize(this);           
-           key.setUsesShaderNodes(true);
-        }   
-        shader = manager.loadShader(key);
+        Shader loadedShader = assetManager.loadShader(key);
 
-        // register the world bound uniforms
-        worldBindUniforms.clear();
+        // Register the world bound uniforms from the technique on the shader.
+        // This allows the uniforms to be quickly set by
+        // the uniform binding manager.
+        // TODO: Maybe add this later??
+        //ArrayList<Uniform> worldBindUniforms = loadedShader.getWorldBindUniforms();
         if (def.getWorldBindings() != null) {
-           for (UniformBinding binding : def.getWorldBindings()) {
-               Uniform uniform = shader.getUniform("g_" + binding.name());
-               uniform.setBinding(binding);
-               worldBindUniforms.add(uniform);
-           }
-        }        
-        needReload = false;
+            for (UniformBinding binding : def.getWorldBindings()) {
+                Uniform uniform = loadedShader.getUniform("g_" + binding.name());
+                uniform.setBinding(binding);
+                //worldBindUniforms.add(uniform);
+            }
+        }
+        
+        return loadedShader;
     }
-    
-    /**
-     * Computes the define list
-     * @return the complete define list
-     */
-    public DefineList getAllDefines() {
-        DefineList allDefines = new DefineList();
-        allDefines.addFrom(def.getShaderPresetDefines());
-        allDefines.addFrom(defines);
-        return allDefines;
-    } 
-    
-    /*
-    public void write(JmeExporter ex) throws IOException {
-        OutputCapsule oc = ex.getCapsule(this);
-        oc.write(def, "def", null);
-        oc.writeSavableArrayList(worldBindUniforms, "worldBindUniforms", null);
-        oc.write(defines, "defines", null);
-        oc.write(shader, "shader", null);
-    }
-
-    public void read(JmeImporter im) throws IOException {
-        InputCapsule ic = im.getCapsule(this);
-        def = (TechniqueDef) ic.readSavable("def", null);
-        worldBindUniforms = ic.readSavableArrayList("worldBindUniforms", null);
-        defines = (DefineList) ic.readSavable("defines", null);
-        shader = (Shader) ic.readSavable("shader", null);
-    }
-    */
 }

@@ -35,7 +35,6 @@ import com.jme3.export.InputCapsule;
 import com.jme3.export.JmeExporter;
 import com.jme3.export.JmeImporter;
 import com.jme3.export.OutputCapsule;
-import com.jme3.renderer.Renderer;
 import com.jme3.shader.VarType;
 import com.jme3.texture.Texture;
 import java.io.IOException;
@@ -62,15 +61,6 @@ public class MatParamTexture extends MatParam {
         this.value = value;
         this.texture = value;
     }
-    
-    @Override
-    public void setValue(Object value) {
-        if (!(value instanceof Texture)) {
-            throw new IllegalArgumentException("value must be a texture object");
-        }
-        this.value = value;
-        this.texture = (Texture) value;
-    }
 
     public void setUnit(int unit) {
         this.unit = unit;
@@ -80,22 +70,20 @@ public class MatParamTexture extends MatParam {
         return unit;
     }
 
-    @Override
-    public void apply(Renderer r, Technique technique) {
-        TechniqueDef techDef = technique.getDef();
-        r.setTexture(getUnit(), getTextureValue());
-        if (techDef.isUsingShaders()) {
-            technique.updateUniformParam(getPrefixedName(), getVarType(), getUnit());
-        }
-    }
+//    @Override
+//    public void apply(Renderer r, Technique technique) {
+//        TechniqueDef techDef = technique.getDef();
+//        r.setTexture(getUnit(), getTextureValue());
+//        if (techDef.isUsingShaders()) {
+//            technique.updateUniformParam(getPrefixedName(), getVarType(), getUnit());
+//        }
+//    }
 
     @Override
     public void write(JmeExporter ex) throws IOException {
         super.write(ex);
         OutputCapsule oc = ex.getCapsule(this);
         oc.write(unit, "texture_unit", -1);
-        
-        // For backwards compat
         oc.write(texture, "texture", null);
     }
 
@@ -104,7 +92,6 @@ public class MatParamTexture extends MatParam {
         super.read(im);
         InputCapsule ic = im.getCapsule(this);
         unit = ic.readInt("texture_unit", -1);
-        texture = (Texture) value;
-        //texture = (Texture) ic.readSavable("texture", null);
+        texture = (Texture) ic.readSavable("texture", null);
     }
 }

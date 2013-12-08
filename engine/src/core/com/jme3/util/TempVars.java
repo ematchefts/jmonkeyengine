@@ -158,6 +158,9 @@ public class TempVars {
      * Color
      */
     public final ColorRGBA color = new ColorRGBA();
+    public final ColorRGBA color2 = new ColorRGBA();
+    public final ColorRGBA color3 = new ColorRGBA();
+    
     /**
      * General vectors.
      */
