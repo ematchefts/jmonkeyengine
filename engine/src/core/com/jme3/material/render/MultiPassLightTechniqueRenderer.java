@@ -119,7 +119,7 @@ public class MultiPassLightTechniqueRenderer extends AbstractTechniqueRenderer {
             }
             vars.release();
             r.setShader(shader);
-            r.renderMesh(g.getMesh(), g.getLodLevel(), 1);
+            r.renderMesh(g.getMesh(), g.getLodLevel(), 1, null);
         }
 
         if (isFirstLight && lightList.size() > 0) {
@@ -129,7 +129,7 @@ public class MultiPassLightTechniqueRenderer extends AbstractTechniqueRenderer {
             lightColor.setValue(VarType.Vector4, ColorRGBA.BlackNoAlpha);
             lightPos.setValue(VarType.Vector4, nullDirLight);
             r.setShader(shader);
-            r.renderMesh(g.getMesh(), g.getLodLevel(), 1);
+            r.renderMesh(g.getMesh(), g.getLodLevel(), 1, null);
         }
     }
     

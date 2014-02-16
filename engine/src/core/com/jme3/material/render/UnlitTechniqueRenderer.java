@@ -16,6 +16,6 @@ public class UnlitTechniqueRenderer extends AbstractTechniqueRenderer {
         // any unset uniforms will be set to 0
         resetUniformsNotSetByCurrent(shader);
         renderer.setShader(shader);
-        renderer.renderMesh(geom.getMesh(), geom.getLodLevel(), 1);
+        renderer.renderMesh(geom.getMesh(), geom.getLodLevel(), 1, null);
     }
 }

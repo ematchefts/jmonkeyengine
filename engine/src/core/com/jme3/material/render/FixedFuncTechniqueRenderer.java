@@ -52,6 +52,6 @@ public class FixedFuncTechniqueRenderer extends AbstractTechniqueRenderer {
         } else {
             renderer.setLighting(geom.getWorldLightList());
         }
-        renderer.renderMesh(geom.getMesh(), geom.getLodLevel(), 1);
+        renderer.renderMesh(geom.getMesh(), geom.getLodLevel(), 1, null);
     }
 }

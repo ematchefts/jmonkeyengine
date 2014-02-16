@@ -119,7 +119,7 @@ public class SinglePassLightTechniqueRenderer extends AbstractTechniqueRenderer 
         updateLightListUniforms(technique.getShader(), geom, 4);
         resetUniformsNotSetByCurrent(shader);
         renderer.setShader(shader);
-        renderer.renderMesh(geom.getMesh(), geom.getLodLevel(), 1);
+        renderer.renderMesh(geom.getMesh(), geom.getLodLevel(), 1, null);
     }
     
 }
