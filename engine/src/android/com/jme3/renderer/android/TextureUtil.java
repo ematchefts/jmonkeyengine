@@ -408,8 +408,8 @@ public class TextureUtil {
     }
 
     private static void uploadTexture(Image img,
-            int target,
-            int index) {
+                                      int target,
+                                      int index) {
 
         if (img.getEfficentData() instanceof AndroidImageInfo) {
             throw new RendererException("This image uses efficient data. "
@@ -429,14 +429,13 @@ public class TextureUtil {
         int width = img.getWidth();
         int height = img.getHeight();
 
-        if (!NPOT) {
-            // Check if texture is POT
-            if (!FastMath.isPowerOfTwo(width) || !FastMath.isPowerOfTwo(height)) {
-                throw new RendererException("Non-power-of-2 textures "
-                        + "are not supported by the video hardware "
-                        + "and no scaling path available for image: " + img);
-            }
+        // Check if texture is POT
+        if (!NPOT && img.isNPOT()) {
+            throw new RendererException("Non-power-of-2 textures "
+                    + "are not supported by the video hardware "
+                    + "and no scaling path available for image: " + img);
         }
+        
         AndroidGLImageFormat imageFormat = getImageFormat(fmt);
 
         if (data != null) {
@@ -524,13 +523,10 @@ public class TextureUtil {
         int width = img.getWidth();
         int height = img.getHeight();
 
-        if (!NPOT) {
-            // Check if texture is POT
-            if (!FastMath.isPowerOfTwo(width) || !FastMath.isPowerOfTwo(height)) {
-                throw new RendererException("Non-power-of-2 textures "
-                        + "are not supported by the video hardware "
-                        + "and no scaling path available for image: " + img);
-            }
+        if (!NPOT && img.isNPOT()) {
+            throw new RendererException("Non-power-of-2 textures "
+                    + "are not supported by the video hardware "
+                    + "and no scaling path available for image: " + img);
         }
         AndroidGLImageFormat imageFormat = getImageFormat(fmt);
 

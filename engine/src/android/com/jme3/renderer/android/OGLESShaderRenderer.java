@@ -827,10 +827,13 @@ public class OGLESShaderRenderer implements Renderer {
 
         // upload shader source
         // merge the defines and source code
+        byte[] versionCodeData = "#version 100".getBytes();
         byte[] definesCodeData = source.getDefines().getBytes();
         byte[] sourceCodeData = source.getSource().getBytes();
-        ByteBuffer codeBuf = BufferUtils.createByteBuffer(definesCodeData.length
+        ByteBuffer codeBuf = BufferUtils.createByteBuffer(versionCodeData.length
+                                                        + definesCodeData.length
                                                         + sourceCodeData.length);
+        codeBuf.put(versionCodeData);
         codeBuf.put(definesCodeData);
         codeBuf.put(sourceCodeData);
         codeBuf.flip();
@@ -2357,7 +2360,7 @@ public class OGLESShaderRenderer implements Renderer {
         clearTextureUnits();
     }
 
-    public void renderMesh(Mesh mesh, int lod, int count) {
+    public void renderMesh(Mesh mesh, int lod, int count, VertexBuffer[] instanceData) {
         if (mesh.getVertexCount() == 0) {
             return;
         }

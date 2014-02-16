@@ -55,9 +55,7 @@ import com.jme3.texture.Texture;
 import com.jme3.texture.Texture.WrapAxis;
 import com.jme3.util.BufferUtils;
 import com.jme3.util.ListMap;
-import com.jme3.util.NativeObject;
 import com.jme3.util.NativeObjectManager;
-import com.jme3.util.SafeArrayList;
 import java.nio.*;
 import java.util.EnumSet;
 import java.util.List;
@@ -143,6 +141,24 @@ public class LwjglRenderer implements Renderer {
     @SuppressWarnings("fallthrough")
     public void initialize() {
         ContextCapabilities ctxCaps = GLContext.getCapabilities();
+        
+        if (ctxCaps.GL_ARB_debug_output) {
+            ARBDebugOutput.glDebugMessageControlARB(GL_DONT_CARE,
+                                                    GL_DONT_CARE,
+                                                    GL_DONT_CARE,
+                                                    null,
+                                                    true);
+            ARBDebugOutput.glDebugMessageCallbackARB(new ARBDebugOutputCallback(
+                    new ARBDebugOutputCallback.Handler() {
+                @Override
+                public void handleMessage(int source, int type, int id, int severity, String message) {
+                    if (source != ARBDebugOutput.GL_DEBUG_SOURCE_APPLICATION_ARB) {
+                        System.out.println(message);
+                    }
+                }
+            }));
+        }
+        
         if (ctxCaps.OpenGL20) {
             caps.add(Caps.OpenGL20);
             if (ctxCaps.OpenGL21) {
@@ -278,7 +294,7 @@ public class LwjglRenderer implements Renderer {
             caps.add(Caps.PackedDepthStencilBuffer);
         }
 
-        if (ctxCaps.GL_ARB_draw_instanced) {
+        if (ctxCaps.GL_ARB_draw_instanced && ctxCaps.GL_ARB_instanced_arrays) {
             caps.add(Caps.MeshInstancing);
         }
 
@@ -439,12 +455,11 @@ public class LwjglRenderer implements Renderer {
             bits = GL_COLOR_BUFFER_BIT;
         }
         if (depth) {
-
             //glClear(GL_DEPTH_BUFFER_BIT) seems to not work when glDepthMask is false
             //here s some link on openl board
             //http://www.opengl.org/discussion_boards/ubbthreads.php?ubb=showflat&Number=257223
             //if depth clear is requested, we enable the depthMask
-            if (context.depthWriteEnabled == false) {
+            if (!context.depthWriteEnabled) {
                 glDepthMask(true);
                 context.depthWriteEnabled = true;
             }
@@ -973,6 +988,10 @@ public class LwjglRenderer implements Renderer {
                     stringBuf.append(" core");
                 }
                 stringBuf.append("\n");
+            } else {
+                // version 100 does not exist in desktop GLSL.
+                // put version 110 in that case to enable strict checking
+                stringBuf.append("#version 110\n");
             }
         }
         updateNameBuffer();
@@ -1050,13 +1069,16 @@ public class LwjglRenderer implements Renderer {
             }
             glAttachShader(id, source.getId());
         }
-
+        
         if (caps.contains(Caps.OpenGL30)) {
-            // Check if GLSL version is 1.5 for shader
-            GL30.glBindFragDataLocation(id, 0, "outFragColor");
-            // For MRT
-            for (int i = 0; i < maxMRTFBOAttachs; i++) {
-                GL30.glBindFragDataLocation(id, i, "outFragData[" + i + "]");
+            ShaderSource src = shader.getSourceByType(ShaderType.Fragment);
+            if (src.getGlslVersion() >= 150) {
+                // Check if GLSL version is 1.5 for shader
+                GL30.glBindFragDataLocation(id, 0, "outFragColor");
+                // For MRT
+                for (int i = 0; i < maxMRTFBOAttachs; i++) {
+                    GL30.glBindFragDataLocation(id, i, "outFragData[" + i + "]");
+                }
             }
         }
 
@@ -1107,6 +1129,7 @@ public class LwjglRenderer implements Renderer {
         }
     }
 
+    @Override
     public void setShader(Shader shader) {
         if (shader == null) {
             throw new IllegalArgumentException("Shader cannot be null");
@@ -1125,6 +1148,7 @@ public class LwjglRenderer implements Renderer {
         }
     }
 
+    @Override
     public void deleteShaderSource(ShaderSource source) {
         if (source.getId() < 0) {
             logger.warning("Shader source is not uploaded to GPU, cannot delete.");
@@ -1135,6 +1159,7 @@ public class LwjglRenderer implements Renderer {
         source.resetObject();
     }
 
+    @Override
     public void deleteShader(Shader shader) {
         if (shader.getId() == -1) {
             logger.warning("Shader is not uploaded to GPU, cannot delete.");
@@ -1156,10 +1181,12 @@ public class LwjglRenderer implements Renderer {
     /*********************************************************************\
     |* Framebuffers                                                      *|
     \*********************************************************************/
+    @Override
     public void copyFrameBuffer(FrameBuffer src, FrameBuffer dst) {
         copyFrameBuffer(src, dst, true);
     }
 
+    @Override
     public void copyFrameBuffer(FrameBuffer src, FrameBuffer dst, boolean copyDepth) {
         if (GLContext.getCapabilities().GL_EXT_framebuffer_blit) {
             int srcX0 = 0;
@@ -1282,9 +1309,6 @@ public class LwjglRenderer implements Renderer {
                 System.out.println("RB ID: " + rbName);
                 break;
         }
-
-
-
     }
 
     private void printRealFrameBufferInfo(FrameBuffer fb) {
@@ -1838,12 +1862,12 @@ public class LwjglRenderer implements Renderer {
                 glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
                 img.setMipmapsGenerated(true);
             }
+        } else if (img.hasMipmaps()) {
+            // Image already has mipmaps.
+            glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, img.getMipMapSizes().length - 1);
         } else {
-            // Image already has mipmaps or no mipmap generation desired.
-//          glTexParameteri(target, GL_TEXTURE_BASE_LEVEL, 0 );
-            if (img.getMipMapSizes() != null) {
-                glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, img.getMipMapSizes().length - 1);
-            }
+            // Image does not have mipmaps.
+            glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 0);
         }
 
         int imageSamples = img.getMultiSamples();
@@ -1857,14 +1881,11 @@ public class LwjglRenderer implements Renderer {
 
         // Yes, some OpenGL2 cards (GeForce 5) still dont support NPOT.
         if (!GLContext.getCapabilities().GL_ARB_texture_non_power_of_two) {
-            if (img.getWidth() != 0 && img.getHeight() != 0) {
-                if (!FastMath.isPowerOfTwo(img.getWidth())
-                        || !FastMath.isPowerOfTwo(img.getHeight())) {
-                    if (img.getData(0) == null) {
-                        throw new RendererException("non-power-of-2 framebuffer textures are not supported by the video hardware");
-                    } else {
-                        MipMapGenerator.resizeToPowerOf2(img);
-                    }
+            if (img.isNPOT()) {
+                if (img.getData(0) == null) {
+                    throw new RendererException("non-power-of-2 framebuffer textures are not supported by the video hardware");
+                } else {
+                    MipMapGenerator.resizeToPowerOf2(img);
                 }
             }
         }
@@ -1933,6 +1954,7 @@ public class LwjglRenderer implements Renderer {
         img.clearUpdateNeeded();
     }
 
+    @Override
     public void setTexture(int unit, Texture tex) {
         Image image = tex.getImage();
         if (image.isUpdateNeeded() || (image.isGeneratedMipmapsRequired() && !image.isMipmapsGenerated())) {
@@ -1969,6 +1991,7 @@ public class LwjglRenderer implements Renderer {
         setupTextureParams(tex);
     }
 
+    @Override
     public void modifyTexture(Texture tex, Image pixels, int x, int y) {
       setTexture(0, tex);
       TextureUtil.uploadSubTexture(pixels, convertTextureType(tex.getType(), pixels.getMultiSamples(), -1), 0, x, y);
@@ -1989,6 +2012,7 @@ public class LwjglRenderer implements Renderer {
 //        context.textureIndexList.copyNewToOld();
     }
 
+    @Override
     public void deleteImage(Image image) {
         int texId = image.getId();
         if (texId != -1) {
@@ -2044,6 +2068,7 @@ public class LwjglRenderer implements Renderer {
         }
     }
 
+    @Override
     public void updateBufferData(VertexBuffer vb) {
         int bufId = vb.getId();
         boolean created = false;
@@ -2110,6 +2135,15 @@ public class LwjglRenderer implements Renderer {
                     throw new UnsupportedOperationException("Unknown buffer format.");
             }
         } else {
+            // Invalidate / "orphan" old buffer data to prevent
+            // the upload call from synchronizing with GPU.
+            if (GLContext.getCapabilities().GL_ARB_invalidate_subdata) {
+                ARBInvalidateSubdata.glInvalidateBufferData(bufId);
+            }
+            //} else {
+            //    glBufferData(target, vb.getData().limit(), usage);
+            //}
+            
             switch (vb.getFormat()) {
                 case Byte:
                 case UnsignedByte:
@@ -2137,6 +2171,7 @@ public class LwjglRenderer implements Renderer {
         vb.clearUpdateNeeded();
     }
 
+    @Override
     public void deleteBuffer(VertexBuffer vb) {
         int bufId = vb.getId();
         if (bufId != -1) {
@@ -2155,6 +2190,9 @@ public class LwjglRenderer implements Renderer {
         for (int i = 0; i < attribList.oldLen; i++) {
             int idx = attribList.oldList[i];
             glDisableVertexAttribArray(idx);
+            if (context.boundAttribs[idx].isInstanced()) {
+                ARBInstancedArrays.glVertexAttribDivisorARB(idx, 0);
+            }
             context.boundAttribs[idx] = null;
         }
         context.attribIndexList.copyNewToOld();
@@ -2187,15 +2225,32 @@ public class LwjglRenderer implements Renderer {
                     attrib.setLocation(loc);
                 }
             }
+            
+            int slotsRequired = 1;
+            if (vb.isInstanced()) {
+                if (!GLContext.getCapabilities().GL_ARB_instanced_arrays ||
+                    !GLContext.getCapabilities().GL_ARB_draw_instanced) {
+                    throw new RendererException("Instancing is required, " +
+                                                "but not supported by the " + 
+                                                "graphics hardware");
+                }
+                if (vb.getNumComponents() > 4 && vb.getNumComponents() % 4 != 0) {
+                    throw new RendererException("Number of components in multi-slot " + 
+                                                "buffers must be divisible by 4");
+                }
+                slotsRequired = vb.getNumComponents() / 4;
+            }
 
             if (vb.isUpdateNeeded() && idb == null) {
                 updateBufferData(vb);
             }
 
             VertexBuffer[] attribs = context.boundAttribs;
-            if (!context.attribIndexList.moveToNew(loc)) {
-                glEnableVertexAttribArray(loc);
-                //System.out.println("Enabled ATTRIB IDX: "+loc);
+            for (int i = 0; i < slotsRequired; i++) {
+                if (!context.attribIndexList.moveToNew(loc + i)) {
+                    glEnableVertexAttribArray(loc + i);
+                    //System.out.println("Enabled ATTRIB IDX: "+loc);
+                }
             }
             if (attribs[loc] != vb) {
                 // NOTE: Use id from interleaved buffer if specified
@@ -2209,14 +2264,43 @@ public class LwjglRenderer implements Renderer {
                     //statistics.onVertexBufferUse(vb, false);
                 }
 
-                glVertexAttribPointer(loc,
-                        vb.getNumComponents(),
-                        convertFormat(vb.getFormat()),
-                        vb.isNormalized(),
-                        vb.getStride(),
-                        vb.getOffset());
-
-                attribs[loc] = vb;
+                if (slotsRequired == 1) {
+                    glVertexAttribPointer(loc,
+                                          vb.getNumComponents(),
+                                          convertFormat(vb.getFormat()),
+                                          vb.isNormalized(),
+                                          vb.getStride(),
+                                          vb.getOffset());
+                } else {
+                    for (int i = 0; i < slotsRequired; i++) {
+                        // The pointer maps the next 4 floats in the slot.
+                        // E.g. 
+                        // P1: XXXX____________XXXX____________
+                        // P2: ____XXXX____________XXXX________
+                        // P3: ________XXXX____________XXXX____
+                        // P4: ____________XXXX____________XXXX
+                        // stride = 4 bytes in float * 4 floats in slot * num slots
+                        // offset = 4 bytes in float * 4 floats in slot * slot index
+                        glVertexAttribPointer(loc + i,
+                                              4,
+                                              convertFormat(vb.getFormat()),
+                                              vb.isNormalized(),
+                                              4 * 4 * slotsRequired,
+                                              4 * 4 * i);
+                    }
+                }
+                
+                for (int i = 0; i < slotsRequired; i++) {
+                    int slot = loc + i;
+                    if (vb.isInstanced() && (attribs[slot] == null || !attribs[slot].isInstanced())) {
+                        // non-instanced -> instanced
+                        ARBInstancedArrays.glVertexAttribDivisorARB(slot, 1);
+                    } else if (!vb.isInstanced() && attribs[slot] != null && attribs[slot].isInstanced()) {
+                        // instanced -> non-instanced
+                        ARBInstancedArrays.glVertexAttribDivisorARB(slot, 0);
+                    }
+                    attribs[slot] = vb;
+                }
             }
         } else {
             throw new IllegalStateException("Cannot render mesh without shader bound");
@@ -2228,7 +2312,8 @@ public class LwjglRenderer implements Renderer {
     }
 
     public void drawTriangleArray(Mesh.Mode mode, int count, int vertCount) {
-        if (count > 1) {
+        boolean useInstancing = count > 1 && caps.contains(Caps.MeshInstancing);
+        if (useInstancing) {
             ARBDrawInstanced.glDrawArraysInstancedARB(convertElementMode(mode), 0,
                     vertCount, count);
         } else {
@@ -2337,7 +2422,7 @@ public class LwjglRenderer implements Renderer {
         }
     }
 
-    public void updateVertexArray(Mesh mesh) {
+    public void updateVertexArray(Mesh mesh, VertexBuffer instanceData) {
         int id = mesh.getId();
         if (id == -1) {
             IntBuffer temp = intBuf1;
@@ -2356,6 +2441,10 @@ public class LwjglRenderer implements Renderer {
             updateBufferData(interleavedData);
         }
 
+        if (instanceData != null) {
+            setVertexAttrib(instanceData, null);
+        }
+        
         for (VertexBuffer vb : mesh.getBufferList().getArray()) {
             if (vb.getBufferType() == Type.InterleavedData
                     || vb.getUsage() == Usage.CpuOnly // ignore cpu-only buffers
@@ -2373,9 +2462,9 @@ public class LwjglRenderer implements Renderer {
         }
     }
 
-    private void renderMeshVertexArray(Mesh mesh, int lod, int count) {
+    private void renderMeshVertexArray(Mesh mesh, int lod, int count, VertexBuffer instanceData) {
         if (mesh.getId() == -1) {
-            updateVertexArray(mesh);
+            updateVertexArray(mesh, instanceData);
         } else {
             // TODO: Check if it was updated
         }
@@ -2401,25 +2490,25 @@ public class LwjglRenderer implements Renderer {
         clearTextureUnits();
     }
 
-    private void renderMeshDefault(Mesh mesh, int lod, int count) {
-        VertexBuffer indices = null;
-
+    private void renderMeshDefault(Mesh mesh, int lod, int count, VertexBuffer[] instanceData) {
         VertexBuffer interleavedData = mesh.getBuffer(Type.InterleavedData);
         if (interleavedData != null && interleavedData.isUpdateNeeded()) {
             updateBufferData(interleavedData);
         }
 
-//        IntMap<VertexBuffer> buffers = mesh.getBuffers();
-        SafeArrayList<VertexBuffer> buffersList = mesh.getBufferList();
-
+        VertexBuffer indices;
         if (mesh.getNumLodLevels() > 0) {
             indices = mesh.getLodLevel(lod);
         } else {
             indices = mesh.getBuffer(Type.Index);
         }
+        
+        if (instanceData != null) {
+            for (VertexBuffer vb : instanceData) {
+                setVertexAttrib(vb, null);
+            }
+        }
 
-//        for (Entry<VertexBuffer> entry : buffers) {
-//             VertexBuffer vb = entry.getValue();
         for (VertexBuffer vb : mesh.getBufferList().getArray()) {
             if (vb.getBufferType() == Type.InterleavedData
                     || vb.getUsage() == Usage.CpuOnly // ignore cpu-only buffers
@@ -2445,7 +2534,8 @@ public class LwjglRenderer implements Renderer {
         clearTextureUnits();
     }
 
-    public void renderMesh(Mesh mesh, int lod, int count) {
+    @Override
+    public void renderMesh(Mesh mesh, int lod, int count, VertexBuffer[] instanceData) {
         if (mesh.getVertexCount() == 0) {
             return;
         }
@@ -2472,11 +2562,13 @@ public class LwjglRenderer implements Renderer {
             context.lineWidth = mesh.getLineWidth();
         }
 
+        System.out.println("render " + mesh);
+        
         statistics.onMeshDrawn(mesh, lod);
 //        if (GLContext.getCapabilities().GL_ARB_vertex_array_object){
 //            renderMeshVertexArray(mesh, lod, count);
 //        }else{
-        renderMeshDefault(mesh, lod, count);
+        renderMeshDefault(mesh, lod, count, instanceData);
 //        }
     }
 }

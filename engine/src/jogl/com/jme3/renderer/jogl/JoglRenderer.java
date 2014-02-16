@@ -1024,6 +1024,10 @@ public class JoglRenderer implements Renderer {
                     stringBuf.append(" core");
                 }
                 stringBuf.append("\n");
+            } else {
+                // version 100 does not exist in desktop GLSL.
+                // put version 110 in that case to enable strict checking
+                stringBuf.append("#version 110\n");
             }
         }
         updateNameBuffer();
@@ -1109,14 +1113,17 @@ public class JoglRenderer implements Renderer {
         }
 
         if (caps.contains(Caps.OpenGL30) && gl.isGL2GL3()) {
-            // Check if GLSL version is 1.5 for shader
-            gl.getGL2GL3().glBindFragDataLocation(id, 0, "outFragColor");
-            // For MRT
-            for (int i = 0; i < maxMRTFBOAttachs; i++) {
-                gl.getGL2GL3().glBindFragDataLocation(id, i, "outFragData[" + i + "]");
+            ShaderSource src = shader.getSourceByType(Shader.ShaderType.Fragment);
+            if (src.getGlslVersion() >= 150) {
+                // Check if GLSL version is 1.5 for shader
+                gl.getGL2GL3().glBindFragDataLocation(id, 0, "outFragColor");
+                // For MRT
+                for (int i = 0; i < maxMRTFBOAttachs; i++) {
+                    gl.getGL2GL3().glBindFragDataLocation(id, i, "outFragData[" + i + "]");
+                }
             }
         }
-
+        
         // Link shaders to program
         gl.getGL2ES2().glLinkProgram(id);
 
@@ -1953,14 +1960,11 @@ public class JoglRenderer implements Renderer {
 
         // Yes, some OpenGL2 cards (GeForce 5) still dont support NPOT.
         if (!gl.isExtensionAvailable("GL_ARB_texture_non_power_of_two")) {
-            if (img.getWidth() != 0 && img.getHeight() != 0) {
-                if (!FastMath.isPowerOfTwo(img.getWidth())
-                        || !FastMath.isPowerOfTwo(img.getHeight())) {
-                    if (img.getData(0) == null) {
-                        throw new RendererException("non-power-of-2 framebuffer textures are not supported by the video hardware");
-                    } else {
-                        MipMapGenerator.resizeToPowerOf2(img);
-                    }
+            if (img.isNPOT()) {
+                if (img.getData(0) == null) {
+                    throw new RendererException("non-power-of-2 framebuffer textures are not supported by the video hardware");
+                } else {
+                    MipMapGenerator.resizeToPowerOf2(img);
                 }
             }
         }
@@ -2544,11 +2548,14 @@ public class JoglRenderer implements Renderer {
         clearTextureUnits();
     }
 
-    public void renderMesh(Mesh mesh, int lod, int count) {
+    @Override
+    public void renderMesh(Mesh mesh, int lod, int count, VertexBuffer[] instanceData) {
         if (mesh.getVertexCount() == 0) {
             return;
         }
 
+        // TODO: Support instancing properly.
+        
         GL gl = GLContext.getCurrentGL();
         if (context.pointSprite && mesh.getMode() != Mode.Points) {
             // XXX: Hack, disable point sprite mode if mesh not in point mode

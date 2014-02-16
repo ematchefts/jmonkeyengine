@@ -23,6 +23,8 @@ import com.jme3.renderer.GL1Renderer;
 import com.jme3.renderer.RenderManager;
 import com.jme3.renderer.Renderer;
 import com.jme3.scene.Geometry;
+import com.jme3.scene.Mesh;
+import com.jme3.scene.instancing.InstancedGeometry;
 import com.jme3.shader.Shader;
 import com.jme3.shader.Uniform;
 import com.jme3.shader.VarType;
@@ -47,6 +49,17 @@ public class LightingUtil {
         }
         store.a = 1.0f;
         return store;
+    }
+    
+    private static void renderMeshFromGeometry(Renderer renderer, Geometry geom) {
+        Mesh mesh = geom.getMesh();
+        int lodLevel = geom.getLodLevel();
+        if (geom instanceof InstancedGeometry) {
+            InstancedGeometry instGeom = (InstancedGeometry) geom;
+            renderer.renderMesh(mesh, lodLevel, instGeom.getCurrentNumInstances(), instGeom.getAllInstanceData());
+        } else {
+            renderer.renderMesh(mesh, lodLevel, 1, null);
+        }
     }
     
     private static void preMaterialRenderFixedFunc(RenderManager renderManager, Material material, Technique technique) {
@@ -113,7 +126,7 @@ public class LightingUtil {
         } else {
             renderer.setLighting(null);
         }
-        renderer.renderMesh(geometry.getMesh(), geometry.getLodLevel(), 1);
+        renderMeshFromGeometry(renderer, geometry);
     }
 
     public static void renderNoLighting(RenderManager renderManager, Material material, Technique technique, Geometry geometry) {
@@ -124,7 +137,7 @@ public class LightingUtil {
         preMaterialRender(renderManager, material, technique, shader);
         shader.resetUniformsNotSetByCurrent();
         renderer.setShader(shader);
-        renderer.renderMesh(geometry.getMesh(), geometry.getLodLevel(), 1);
+        renderMeshFromGeometry(renderer, geometry);
     }
     
     public static void renderSinglePassLighting(RenderManager renderManager, Material material, Technique technique, Geometry geometry) {
@@ -208,7 +221,7 @@ public class LightingUtil {
         lightShader.resetUniformsNotSetByCurrent();
         
         renderer.setShader(lightShader);
-        renderer.renderMesh(geometry.getMesh(), geometry.getLodLevel(), 1);
+        renderMeshFromGeometry(renderer, geometry);
         
         vars.release();
     }
@@ -275,7 +288,7 @@ public class LightingUtil {
         lightShader.resetUniformsNotSetByCurrent();
         
         renderer.setShader(lightShader);
-        renderer.renderMesh(geometry.getMesh(), geometry.getLodLevel(), 1);
+        renderMeshFromGeometry(renderer, geometry);
         
         vars.release();
     }
@@ -398,7 +411,8 @@ public class LightingUtil {
         lightShader.resetUniformsNotSetByCurrent();
         
         renderer.setShader(lightShader);
-        renderer.renderMesh(geometry.getMesh(), geometry.getLodLevel(), 1);
+        
+        renderMeshFromGeometry(renderer, geometry);
         
         vars.release();
     }
