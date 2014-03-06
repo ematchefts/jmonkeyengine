@@ -34,6 +34,7 @@ package com.jme3.gde.terraineditor.tools;
 import com.jme3.asset.AssetManager;
 import com.jme3.gde.core.sceneexplorer.nodes.AbstractSceneExplorerNode;
 import com.jme3.gde.terraineditor.ExtraToolParams;
+import com.jme3.gde.terraineditor.TerrainEditorController;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
@@ -43,24 +44,27 @@ import org.openide.loaders.DataObject;
  * Level the terrain. Uses a desired height point set by the secondary
  * action (right mouse button) and raises/lowers the terrain to that
  * desired height.
- * 
+ *
  * @author Brent Owens
  */
 public class LevelTerrainTool extends TerrainTool {
 
+    private final TerrainEditorController editorController;
+
     private Vector3f desiredHeight;
     private LevelExtraToolParams toolParams;
-    
-    public LevelTerrainTool() {
+
+    public LevelTerrainTool(TerrainEditorController controller) {
         toolHintTextKey = "TerrainEditorTopComponent.toolHint.level";
+        this.editorController = controller;
     }
-    
+
     @Override
     public void activate(AssetManager manager, Node parent) {
         super.activate(manager, parent);
         addMarkerSecondary(parent);
     }
-    
+
     @Override
     public void actionPrimary(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         if (radius == 0 || weight == 0)
@@ -71,7 +75,7 @@ public class LevelTerrainTool extends TerrainTool {
             desiredHeight.y = markerSecondary.getWorldTranslation().y;
         if (toolParams.absolute)
             desiredHeight.y = toolParams.height;
-        LevelTerrainToolAction action = new LevelTerrainToolAction(point, radius, weight, desiredHeight, toolParams.precision, getMesh());
+        LevelTerrainToolAction action = new LevelTerrainToolAction(editorController, point, radius, weight, desiredHeight, toolParams.precision, getMesh());
         action.doActionPerformed(rootNode, dataObject);
     }
 
@@ -80,7 +84,7 @@ public class LevelTerrainTool extends TerrainTool {
         desiredHeight = point;
         markerSecondary.setLocalTranslation(desiredHeight);
     }
-    
+
     @Override
     public void addMarkerPrimary(Node parent) {
         super.addMarkerPrimary(parent);

@@ -33,6 +33,7 @@ package com.jme3.gde.terraineditor.tools;
 
 import com.jme3.gde.core.sceneexplorer.nodes.AbstractSceneExplorerNode;
 import com.jme3.gde.terraineditor.ExtraToolParams;
+import com.jme3.gde.terraineditor.TerrainEditorController;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
@@ -55,16 +56,19 @@ import java.util.List;
  * @author sploreg
  */
 public class RoughTerrainToolAction extends AbstractTerrainToolAction {
-    
+
     private Vector3f worldLoc;
     private float radius;
     private float weight;
     private RoughExtraToolParams params;
-    
+
     List<Vector2f> undoLocs;
     List<Float> undoHeights;
 
-    public RoughTerrainToolAction(Vector3f markerLocation, float radius, float weight, ExtraToolParams params) {
+    private final TerrainEditorController editorController;
+
+    public RoughTerrainToolAction(TerrainEditorController controller, Vector3f markerLocation, float radius, float weight, ExtraToolParams params) {
+        this.editorController = controller;
         this.worldLoc = markerLocation.clone();
         this.radius = radius;
         this.weight = weight;
@@ -74,13 +78,14 @@ public class RoughTerrainToolAction extends AbstractTerrainToolAction {
 
     @Override
     protected Object doApplyTool(AbstractSceneExplorerNode rootNode) {
-        Terrain terrain = getTerrain(rootNode.getLookup().lookup(Node.class));
+        // Terrain terrain = getTerrain(rootNode.getLookup().lookup(Node.class));
+        Terrain terrain = (Terrain)editorController.getTerrain(null);
         if (terrain == null)
             return null;
         roughen(terrain, radius, weight, params);
         return terrain;
     }
-    
+
     @Override
     protected void doUndoTool(AbstractSceneExplorerNode rootNode, Object undoObject) {
         if (undoObject == null)
@@ -89,36 +94,41 @@ public class RoughTerrainToolAction extends AbstractTerrainToolAction {
             return;
         resetHeight((Terrain)undoObject, undoLocs, undoHeights);
     }
-    
+
     private void roughen(Terrain terrain, float radius, float weight, RoughExtraToolParams params) {
         Basis fractalFilter = createFractalGenerator(params, weight);
-        
+
         List<Vector2f> locs = new ArrayList<Vector2f>();
         List<Float> heights = new ArrayList<Float>();
-        
+
         // offset it by radius because in the loop we iterate through 2 radii
         int radiusStepsX = (int) (radius / ((Node)terrain).getLocalScale().x);
         int radiusStepsZ = (int) (radius / ((Node)terrain).getLocalScale().z);
         float xStepAmount = ((Node)terrain).getLocalScale().x;
         float zStepAmount = ((Node)terrain).getLocalScale().z;
-        
+
+        // Calculate the center of the terrain that the mouse is hovering over, instead of assuming
+        // a singular position of Vector3f.ZERO
+        Vector3f terrainPos = ((Node)terrain).getLocalTranslation();
+        Vector3f workPos = worldLoc.subtractLocal(terrainPos);
+
         int r2 = (int) (radius*2);
         FloatBuffer fb = fractalFilter.getBuffer(worldLoc.x, worldLoc.z, 0, r2);
-        
+
         //for (int y=0; y<r2; y++) {
         //    for (int x=0; x<r2; x++) {
         int xfb=0,yfb=0;
         for (int z = -radiusStepsZ; z < radiusStepsZ; z++) {
             for (int x = -radiusStepsX; x < radiusStepsX; x++) {
-                
-                float locX = worldLoc.x + (x * xStepAmount);
-                float locZ = worldLoc.z + (z * zStepAmount);
-                
+
+                float locX = workPos.x + (x * xStepAmount);
+                float locZ = workPos.z + (z * zStepAmount);
+
                 float height = fb.get(yfb*r2 + xfb);
-                
-                if (isInRadius(locX - worldLoc.x, locZ - worldLoc.z, radius)) {
+
+                if (isInRadius(locX - workPos.x, locZ - workPos.z, radius)) {
                     // see if it is in the radius of the tool
-                    float h = calculateHeight(radius, height, locX - worldLoc.x, locZ - worldLoc.z);
+                    float h = calculateHeight(radius, height, locX - workPos.x, locZ - workPos.z);
                     locs.add(new Vector2f(locX, locZ));
                     heights.add(h);
                 }
@@ -127,16 +137,16 @@ public class RoughTerrainToolAction extends AbstractTerrainToolAction {
             yfb++;
             xfb = 0;
         }
-        
+
         undoLocs = locs;
         undoHeights = heights;
-        
+
         // do the actual height adjustment
         terrain.adjustHeight(locs, heights);
 
         ((Node)terrain).updateModelBound(); // or else we won't collide with it where we just edited
     }
-    
+
     private boolean isInRadius(float x, float y, float radius) {
         Vector2f point = new Vector2f(x, y);
         // return true if the distance is less than equal to the radius
@@ -153,16 +163,16 @@ public class RoughTerrainToolAction extends AbstractTerrainToolAction {
         }
         return heightFactor * val * 0.1f; // 0.1 scales it down a bit to lower the impact of the tool
     }
-    
+
     private void resetHeight(Terrain terrain, List<Vector2f> undoLocs, List<Float> undoHeights) {
         List<Float> neg = new ArrayList<Float>();
         for (Float f : undoHeights)
             neg.add( f * -1f );
-        
+
         terrain.adjustHeight(undoLocs, neg);
         ((Node)terrain).updateModelBound();
     }
-    
+
     private Basis createFractalGenerator(RoughExtraToolParams params, float weight) {
         FractalSum base = new FractalSum();
         base.setRoughness(params.roughness);
@@ -203,7 +213,7 @@ public class RoughTerrainToolAction extends AbstractTerrainToolAction {
         iterate.setIterations(1);
 
         ground.addPreFilter(iterate);
-        
+
         return ground;
     }
 }

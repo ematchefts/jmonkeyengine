@@ -35,6 +35,7 @@ import com.jme3.asset.AssetManager;
 import com.jme3.gde.core.sceneexplorer.nodes.AbstractSceneExplorerNode;
 import com.jme3.gde.core.undoredo.AbstractUndoableSceneEdit;
 import com.jme3.gde.core.undoredo.SceneUndoRedoManager;
+import com.jme3.gde.terraineditor.TerrainEditorController;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
@@ -48,10 +49,17 @@ import org.openide.util.Lookup;
 
 /**
  * Raise the terrain
- * 
+ *
  * @author Brent Owens
  */
 public class RaiseTerrainTool extends TerrainTool {
+
+    private TerrainEditorController editorController;
+
+    public RaiseTerrainTool(TerrainEditorController controller)
+    {
+        this.editorController = controller;
+    }
 
     private boolean modifying = false; // to check when undo actions need to be set
     List<RaiseTerrainToolAction> actions = new ArrayList<RaiseTerrainToolAction>();
@@ -68,32 +76,32 @@ public class RaiseTerrainTool extends TerrainTool {
         setPrimary(false);
         action(point, textureIndex, rootNode, dataObject);
     }
-    
+
     private void action(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         if (radius == 0 || weight == 0)
             return;
-        
+
         if (!modifying)
             modifying = true;
-        
+
         RaiseTerrainToolAction action;
         if (isPrimary())
-            action = new RaiseTerrainToolAction(point, radius, weight, getMesh());
+            action = new RaiseTerrainToolAction(editorController, point, radius, weight, getMesh());
         else
-            action = new RaiseTerrainToolAction(point, radius, -weight, getMesh());
-        
+            action = new RaiseTerrainToolAction(editorController, point, radius, -weight, getMesh());
+
         action.doActionPerformed(rootNode, dataObject, false);
         actions.add(action);
     }
-    
+
     @Override
     public void actionEnded(AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         if (modifying) {
             modifying = false;
-            
+
             if (actions.isEmpty())
                 return;
-            
+
             // record undo action
             List<RaiseTerrainToolAction> cloned = new ArrayList<RaiseTerrainToolAction>();
             cloned.addAll(actions);
@@ -101,13 +109,13 @@ public class RaiseTerrainTool extends TerrainTool {
             actions.clear();
         }
     }
-    
+
     @Override
     public void addMarkerPrimary(Node parent) {
         super.addMarkerPrimary(parent);
         markerPrimary.getMaterial().setColor("Color", ColorRGBA.Green);
     }
-    
+
     private void recordUndo(final List<RaiseTerrainToolAction> actions, final AbstractSceneExplorerNode rootNode, final DataObject dataObject) {
         Lookup lookup = Lookup.getDefault() ;
         SceneUndoRedoManager manager = lookup.lookup(SceneUndoRedoManager.class);
@@ -119,7 +127,7 @@ public class RaiseTerrainTool extends TerrainTool {
                 Terrain terrain = null;
                 for (int i=actions.size()-1; i>=0; i--) {
                     RaiseTerrainToolAction a = actions.get(i);
-                    if (terrain == null) 
+                    if (terrain == null)
                         terrain = a.getTerrain(rootNode.getLookup().lookup(Node.class));
                     a.doUndoTool(rootNode, terrain);
                 }
@@ -139,7 +147,7 @@ public class RaiseTerrainTool extends TerrainTool {
         if (manager != null) // this is a temporary check, it should never be null but occasionally is
             manager.addEdit(this, undoer);
     }
-    
+
     protected void setModified(final AbstractSceneExplorerNode rootNode, final DataObject dataObject) {
         if (dataObject.isModified())
             return;

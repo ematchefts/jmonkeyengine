@@ -32,67 +32,86 @@
 package com.jme3.gde.terraineditor.tools;
 
 import com.jme3.gde.core.sceneexplorer.nodes.AbstractSceneExplorerNode;
+import com.jme3.gde.terraineditor.TerrainEditorController;
 import com.jme3.material.MatParam;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.jme3.terrain.Terrain;
+import com.jme3.terrain.geomipmap.TerrainQuad;
 import com.jme3.texture.Image;
 import com.jme3.texture.Texture;
 import java.nio.ByteBuffer;
+import java.util.Collection;
 
 /**
  * Paint or erase the texture at the specified location.
- * 
+ *
  * @author Brent Owens
  */
 public class PaintTerrainToolAction extends AbstractTerrainToolAction {
-    
+
+    private TerrainEditorController editorController;
+
     private Vector3f worldLoc;
     private float radius;
     private float weight;
     private int selectedTextureIndex;
-    
+
     public PaintTerrainToolAction() {}
-    
-    public PaintTerrainToolAction(Vector3f markerLocation, float radius, float weight, int selectedTextureIndex) {
+
+    public PaintTerrainToolAction(TerrainEditorController controller, Vector3f markerLocation, float radius, float weight, int selectedTextureIndex) {
+        this.editorController = controller;
         this.worldLoc = markerLocation.clone();
         this.radius = radius;
         this.weight = weight;
         this.selectedTextureIndex = selectedTextureIndex;
         name = "Paint terrain";
     }
-    
+
     public Object applyTool(AbstractSceneExplorerNode rootNode) {
         return doApplyTool(rootNode);
     }
-    
+
     @Override
     protected Object doApplyTool(AbstractSceneExplorerNode rootNode) {
-        Terrain terrain = getTerrain(rootNode.getLookup().lookup(Node.class));
+
+        // Terrain terrain = getTerrain(rootNode.getLookup().lookup(Node.class));
+        Terrain terrain = (Terrain)editorController.getTerrain(null);
+
         if (terrain == null)
             return null;
+
         paintTexture(terrain, worldLoc, radius, weight, selectedTextureIndex);
+
+        // TerrainQuad tq = (TerrainQuad)terrain;
+        // Collection<MatParam> terrainParams = tq.getMaterial().getParams();
+
         return terrain;
     }
-    
+
     @Override
     protected void doUndoTool(AbstractSceneExplorerNode rootNode, Object undoObject) {
         if (undoObject == null)
             return;
         paintTexture((Terrain)undoObject, worldLoc, radius, -weight, selectedTextureIndex);
     }
-    
+
     public void paintTexture(Terrain terrain, Vector3f markerLocation, float toolRadius, float toolWeight, int selectedTextureIndex) {
         if (selectedTextureIndex < 0 || markerLocation == null)
             return;
-        
+
         int alphaIdx = selectedTextureIndex/4; // 4 = rgba = 4 textures
         Texture tex = getAlphaTexture(terrain, alphaIdx);
         Image image = tex.getImage();
 
-        Vector2f UV = getPointPercentagePosition(terrain, markerLocation);
+        // Calculate the center of the terrain that the mouse is hovering over, instead of assuming
+        // a singular position of Vector3f.ZERO
+        Vector3f terrainPos = ((Node)terrain).getLocalTranslation();
+        Vector3f workPos = markerLocation.subtract(terrainPos);
+
+        Vector2f UV = getPointPercentagePosition(terrain, workPos);
 
         // get the radius of the brush in pixel-percent
         float brushSize = toolRadius/(terrain.getTerrainSize()*((Node)terrain).getLocalScale().x);
@@ -104,20 +123,21 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
         doPaintAction(texIndex, image, UV, true, brushSize, erase, toolWeight);
 
         tex.getImage().setUpdateNeeded();
+        editorController.doSaveAlphaImages(terrain);
     }
-    
+
     public Vector2f getPointPercentagePosition(Terrain terrain, Vector3f worldLoc) {
         Vector2f uv = new Vector2f(worldLoc.x,-worldLoc.z);
         float scale = ((Node)terrain).getLocalScale().x;
-        
-        uv.subtractLocal(((Node)terrain).getWorldTranslation().x*scale, ((Node)terrain).getWorldTranslation().z*scale); // center it on 0,0
+
+        // uv.subtractLocal(((Node)terrain).getWorldTranslation().x*scale, ((Node)terrain).getWorldTranslation().z*scale); // center it on 0,0
         float scaledSize = terrain.getTerrainSize()*scale;
         uv.addLocal(scaledSize/2, scaledSize/2); // shift the bottom left corner up to 0,0
         uv.divideLocal(scaledSize); // get the location as a percentage
-        
+
         return uv;
     }
-    
+
     private Texture getAlphaTexture(Terrain terrain, int alphaLayer) {
         if (terrain == null)
             return null;
@@ -128,14 +148,14 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
             matParam = terrain.getMaterial(null).getParam("AlphaMap_1");
         else if(alphaLayer == 2)
             matParam = terrain.getMaterial(null).getParam("AlphaMap_2");
-        
+
         if (matParam == null || matParam.getValue() == null) {
             return null;
         }
         Texture tex = (Texture) matParam.getValue();
         return tex;
     }
-    
+
     /**
      * Goes through each pixel in the image. At each pixel it looks to see if the UV mouse coordinate is within the
      * of the brush. If it is in the brush radius, it gets the existing color from that pixel so it can add/subtract to/from it.
@@ -158,12 +178,13 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
     protected void doPaintAction(int texIndex, Image image, Vector2f uv, boolean dragged, float radius, boolean erase, float fadeFalloff){
         Vector2f texuv = new Vector2f();
         ColorRGBA color = ColorRGBA.Black;
-        
+
         float width = image.getWidth();
         float height = image.getHeight();
 
         int minx = (int) Math.max(0, (uv.x*width - radius*width)); // convert percents to pixels to limit how much we iterate
         int maxx = (int) Math.min(width,(uv.x*width + radius*width));
+
         int miny = (int) Math.max(0,(uv.y*height - radius*height));
         int maxy = (int) Math.min(height,(uv.y*height + radius*height));
 
@@ -172,7 +193,7 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
         // go through each pixel, in the radius of the tool, in the image
         for (int y = miny; y < maxy; y++){
             for (int x = minx; x < maxx; x++){
-                
+
                 texuv.set((float)x / width, (float)y / height);// gets the position in percentage so it can compare with the mouse UV coordinate
 
                 float dist = texuv.distanceSquared(uv);
@@ -187,8 +208,8 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
                         d2 = d2/dr; // dist percentage of falloff length
                         intensity = 1-d2; // fade out more the farther away it is
                     }*/
-                    
-                    
+
+
                     //if (dragged)
                     //	intensity = intensity*0.1f; // magical divide it by 10 to reduce its intensity when mouse is dragged
 
@@ -225,7 +246,7 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
 
         image.getData(0).rewind();
     }
-    
+
     /**
      * We are only using RGBA8 images for alpha textures right now.
      * @param image to get/set the color on
@@ -242,7 +263,7 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
 
         if ( position> buf.capacity()-1 || position<0 )
             return;
-        
+
         if (write) {
             switch (image.getFormat()){
                 case RGBA8:
@@ -280,7 +301,7 @@ public class PaintTerrainToolAction extends AbstractTerrainToolAction {
                     throw new UnsupportedOperationException("Image format: "+image.getFormat());
             }
         }
-        
+
     }
 
     private float byte2float(byte b){

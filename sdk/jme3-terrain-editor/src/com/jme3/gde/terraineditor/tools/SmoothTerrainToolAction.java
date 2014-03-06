@@ -32,6 +32,7 @@
 package com.jme3.gde.terraineditor.tools;
 
 import com.jme3.gde.core.sceneexplorer.nodes.AbstractSceneExplorerNode;
+import com.jme3.gde.terraineditor.TerrainEditorController;
 import com.jme3.gde.terraineditor.tools.TerrainTool.Meshes;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
@@ -45,20 +46,23 @@ import java.util.List;
  * The smoothAmount affects how many neighbour points are averaged, The smaller
  * the value, then only the smaller bumps will disappear. A large value will
  * smooth larger hills.
- * 
+ *
  * @author sploreg
  */
 public class SmoothTerrainToolAction extends AbstractTerrainToolAction {
-    
+
     private Vector3f worldLoc;
     private float radius;
     private float height;
-    
+
     List<Vector2f> undoLocs;
     List<Float> undoHeights;
     private final Meshes mesh;
 
-    public SmoothTerrainToolAction(Vector3f markerLocation, float radius, float height, Meshes mesh) {
+    private final TerrainEditorController editorController;
+
+    public SmoothTerrainToolAction(TerrainEditorController controller, Vector3f markerLocation, float radius, float height, Meshes mesh) {
+        this.editorController = controller;
         this.worldLoc = markerLocation.clone();
         this.radius = radius;
         this.height = height;
@@ -68,13 +72,14 @@ public class SmoothTerrainToolAction extends AbstractTerrainToolAction {
 
     @Override
     protected Object doApplyTool(AbstractSceneExplorerNode rootNode) {
-        Terrain terrain = getTerrain(rootNode.getLookup().lookup(Node.class));
+        // Terrain terrain = getTerrain(rootNode.getLookup().lookup(Node.class));
+        Terrain terrain = (Terrain)editorController.getTerrain(null);
         if (terrain == null)
             return null;
         modifyHeight(terrain, worldLoc, radius, height, mesh);
         return terrain;
     }
-    
+
     @Override
     protected void doUndoTool(AbstractSceneExplorerNode rootNode, Object undoObject) {
         if (undoObject == null)
@@ -83,9 +88,9 @@ public class SmoothTerrainToolAction extends AbstractTerrainToolAction {
             return;
         resetHeight((Terrain)undoObject, undoLocs, undoHeights);
     }
-    
+
     private void modifyHeight(Terrain terrain, Vector3f worldLoc, float radius, float height, Meshes mesh) {
-        
+
         int radiusStepsX = (int)(radius / ((Node)terrain).getLocalScale().x);
         int radiusStepsZ = (int)(radius / ((Node)terrain).getLocalScale().z);
 
@@ -95,14 +100,19 @@ public class SmoothTerrainToolAction extends AbstractTerrainToolAction {
         List<Vector2f> locs = new ArrayList<Vector2f>();
         List<Float> heights = new ArrayList<Float>();
 
+        // Calculate the center of the terrain that the mouse is hovering over, instead of assuming
+        // a singular position of Vector3f.ZERO
+        Vector3f terrainPos = ((Node)terrain).getLocalTranslation();
+        Vector3f workPos = worldLoc.subtractLocal(terrainPos);
+
         for (int z=-radiusStepsZ; z<radiusStepsZ; z++) {
             for (int x=-radiusStepsX; x<radiusStepsX; x++) {
 
-                float locX = worldLoc.x + (x*xStepAmount);
-                float locZ = worldLoc.z + (z*zStepAmount);
+                float locX = workPos.x + (x*xStepAmount);
+                float locZ = workPos.z + (z*zStepAmount);
 
                 // see if it is in the radius of the tool
-                if (ToolUtils.isInMesh(locX-worldLoc.x,locZ-worldLoc.z,radius,mesh)) {
+                if (ToolUtils.isInMesh(locX-workPos.x,locZ-workPos.z,radius,mesh)) {
 
                     Vector2f terrainLoc = new Vector2f(locX, locZ);
                     // adjust height based on radius of the tool
@@ -135,31 +145,31 @@ public class SmoothTerrainToolAction extends AbstractTerrainToolAction {
                     // weigh it
                     float diff = amount-center;
                     diff *= height;
-                        
+
                     locs.add(terrainLoc);
                     heights.add(diff);
                 }
             }
         }
-        
+
         undoLocs = locs;
         undoHeights = heights;
-        
+
         // do the actual height adjustment
         terrain.adjustHeight(locs, heights);
 
         ((Node)terrain).updateModelBound(); // or else we won't collide with it where we just edited
     }
-    
+
     private boolean isNaN(float val) {
         return val != val;
     }
-    
+
     private void resetHeight(Terrain terrain, List<Vector2f> undoLocs, List<Float> undoHeights) {
         List<Float> neg = new ArrayList<Float>();
         for (Float f : undoHeights)
             neg.add( f * -1f );
-        
+
         terrain.adjustHeight(undoLocs, neg);
         ((Node)terrain).updateModelBound();
     }

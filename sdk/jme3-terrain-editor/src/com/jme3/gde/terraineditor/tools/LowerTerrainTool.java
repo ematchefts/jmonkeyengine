@@ -32,6 +32,7 @@
 package com.jme3.gde.terraineditor.tools;
 
 import com.jme3.gde.core.sceneexplorer.nodes.AbstractSceneExplorerNode;
+import com.jme3.gde.terraineditor.TerrainEditorController;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
@@ -39,16 +40,23 @@ import org.openide.loaders.DataObject;
 
 /**
  * Lowers the terrain
- * 
+ *
  * @author Brent Owens
  */
 public class LowerTerrainTool extends TerrainTool {
+
+    private final TerrainEditorController editorController;
+
+    public LowerTerrainTool(TerrainEditorController controller)
+    {
+        this.editorController = controller;
+    }
 
     @Override
     public void actionPrimary(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         if (radius == 0 || weight == 0)
             return;
-        RaiseTerrainToolAction action = new RaiseTerrainToolAction(point, radius, -weight, getMesh()); // negative weight
+        RaiseTerrainToolAction action = new RaiseTerrainToolAction(editorController, point, radius, -weight, getMesh()); // negative weight
         action.doActionPerformed(rootNode, dataObject);
     }
 
@@ -56,7 +64,7 @@ public class LowerTerrainTool extends TerrainTool {
     public void actionSecondary(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         // no secondary option
     }
-    
+
     @Override
     public void addMarkerPrimary(Node parent) {
         super.addMarkerPrimary(parent);

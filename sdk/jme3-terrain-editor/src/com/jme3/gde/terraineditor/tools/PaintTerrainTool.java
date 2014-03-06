@@ -48,7 +48,7 @@ import org.openide.util.Lookup;
 
 /**
  * Paint or erase the textures on the terrain.
- * 
+ *
  * @author Brent Owens
  */
 public class PaintTerrainTool extends TerrainTool {
@@ -60,7 +60,7 @@ public class PaintTerrainTool extends TerrainTool {
     public PaintTerrainTool(TerrainEditorController controller) {
         this.controller = controller;
     }
-    
+
     @Override
     public void actionPrimary(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         setPrimary(true);
@@ -72,32 +72,32 @@ public class PaintTerrainTool extends TerrainTool {
         setPrimary(false);
         action(point, textureIndex, rootNode, dataObject);
     }
-    
+
     private void action(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         if (radius == 0 || weight == 0)
             return;
-        
+
         if (!painting)
             painting = true;
-        
+
         PaintTerrainToolAction action;
         if (isPrimary())
-            action = new PaintTerrainToolAction(point, radius, weight, textureIndex);
+            action = new PaintTerrainToolAction(controller, point, radius, weight, textureIndex);
         else
-            action = new PaintTerrainToolAction(point, radius, -weight, textureIndex);
+            action = new PaintTerrainToolAction(controller, point, radius, -weight, textureIndex);
         action.doActionPerformed(rootNode, dataObject, false);
         actions.add(action);
         setModified(rootNode, dataObject);
     }
-    
+
     @Override
     public void actionEnded(AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         if (painting) {
             painting = false;
-            
+
             if (actions.isEmpty())
                 return;
-            
+
             // record undo action
             List<PaintTerrainToolAction> cloned = new ArrayList<PaintTerrainToolAction>();
             cloned.addAll(actions);
@@ -114,7 +114,7 @@ public class PaintTerrainTool extends TerrainTool {
     public boolean isPainting() {
         return painting;
     }
-    
+
     @Override
     public void addMarkerPrimary(Node parent) {
         super.addMarkerPrimary(parent);
@@ -132,7 +132,7 @@ public class PaintTerrainTool extends TerrainTool {
                 Terrain terrain = null;
                 for (int i=actions.size()-1; i>=0; i--) {
                     PaintTerrainToolAction a = actions.get(i);
-                    if (terrain == null) 
+                    if (terrain == null)
                         terrain = a.getTerrain(rootNode.getLookup().lookup(Node.class));
                     a.doUndoTool(rootNode, terrain);
                 }
@@ -152,9 +152,12 @@ public class PaintTerrainTool extends TerrainTool {
         if (manager != null) // this is a temporary check, it should never be null but occasionally is
             manager.addEdit(this, undoer);
     }
-    
-    protected void setModified(final AbstractSceneExplorerNode rootNode, final DataObject dataObject) {
-        controller.alphaLayersChanged();
+
+    protected void setModified(final AbstractSceneExplorerNode rootNode, final DataObject dataObject)
+    {
+        // controller.alphaLayersChanged();
+        controller.getTopComponent().getTerrainTextureController().alphaLayersChanged();
+
         if (dataObject.isModified())
             return;
         java.awt.EventQueue.invokeLater(new Runnable() {

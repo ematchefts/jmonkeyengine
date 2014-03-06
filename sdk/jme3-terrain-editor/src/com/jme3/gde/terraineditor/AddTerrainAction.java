@@ -73,11 +73,11 @@ public class AddTerrainAction extends AbstractNewSpatialWizardAction {
         }
         return null;
     }
-    
+
     protected Spatial generateTerrain(Node parent, final WizardDescriptor wizardDescriptor) throws IOException {
         org.openide.nodes.Node selectedNode = (org.openide.nodes.Node) wizardDescriptor.getProperty("main_node");
         final Spatial spatial = selectedNode.getLookup().lookup(Spatial.class);
-        
+
 
         String sceneName = selectedNode.getLookup().lookup(DataObject.class).getName();
 
@@ -99,8 +99,8 @@ public class AddTerrainAction extends AbstractNewSpatialWizardAction {
 
         return doCreateTerrain(parent, totalSize, patchSize, alphaTextureSize, heightmapData, sceneName, selectedNode);
     }
-    
-    
+
+
     protected Spatial doCreateTerrain(Node parent,
                                     int totalSize,
                                     int patchSize,
@@ -110,30 +110,60 @@ public class AddTerrainAction extends AbstractNewSpatialWizardAction {
                                     org.openide.nodes.Node selectedNode) throws IOException
     {
         final ProjectAssetManager manager = selectedNode.getLookup().lookup(ProjectAssetManager.class);
-        
-        Terrain terrain = new TerrainQuad("terrain-"+sceneName, patchSize, totalSize, heightmapData); //TODO make this pluggable for different Terrain implementations
-        com.jme3.material.Material mat = new com.jme3.material.Material(manager, "Common/MatDefs/Terrain/TerrainLighting.j3md");
 
         String assetFolder = "";
         if (manager != null && manager instanceof ProjectAssetManager)
             assetFolder = ((ProjectAssetManager)manager).getAssetFolderName();
 
+        // use the alphamap naming convention to determine uniquety of alphamap and terrain naming.
+        int terrainNum = 0;
+        File intFinder = new File(assetFolder + "/Textures/terrain-alpha/" + "alpha-" + sceneName + "-" + terrainNum + "-0.png");
+
+        while(intFinder.exists())
+        {
+            terrainNum++;
+            intFinder = new File(assetFolder + "/Textures/terrain-alpha/" + "alpha-" + sceneName + "-" + terrainNum + "-0.png");
+        }
+
+        String terrainName = new StringBuilder().append("terrain-").append(sceneName).append("-").append(terrainNum).toString();
+        StringBuilder alphamapName = new StringBuilder("alpha-").append(sceneName).append("-").append(terrainNum).append("-");
+
+        Terrain terrain = new TerrainQuad(terrainName, patchSize, totalSize, heightmapData);
+        com.jme3.material.Material mat = new com.jme3.material.Material(manager, "Common/MatDefs/Terrain/TerrainLighting.j3md");
+
+
+
         // write out 3 alpha blend images
-        for (int i=0; i<TerrainEditorController.NUM_ALPHA_TEXTURES; i++) {
+        for (int i=0; i< TerrainTextureController.NUM_ALPHA_TEXTURES; i++) {
             BufferedImage alphaBlend = new BufferedImage(alphaTextureSize, alphaTextureSize, BufferedImage.TYPE_INT_ARGB);
             if (i == 0) {
                 // the first alpha level should be opaque so we see the first texture over the whole terrain
-                for (int h=0; h<alphaTextureSize; h++)
-                    for (int w=0; w<alphaTextureSize; w++)
+                for (int h=0; h<alphaTextureSize; h++) {
+                    for (int w=0; w<alphaTextureSize; w++) {
+
                         alphaBlend.setRGB(w, h, 0x00FF0000);//argb
+                    }
+                }
             }
+
             File textureFolder = new File(assetFolder+"/Textures/");
+
             if (!textureFolder.exists())
                 textureFolder.mkdir();
+
             File alphaFolder = new File(assetFolder+"/Textures/terrain-alpha/");
+
             if (!alphaFolder.exists())
                 alphaFolder.mkdir();
-            String alphaBlendFileName = "/Textures/terrain-alpha/"+sceneName+"-"+((Node)terrain).getName()+"-alphablend"+i+".png";
+
+            // String alphaBlendFileName = "/Textures/terrain-alpha/"+sceneName+"-"+((Node)terrain).getName()+"-alphablend"+i+".png";
+            String alphaBlendFileName = new StringBuilder()
+                    .append("/Textures/terrain-alpha/")
+                    .append(alphamapName)
+                    .append(i)
+                    .append(".png")
+                    .toString();
+
             File alphaImageFile = new File(assetFolder+alphaBlendFileName);
             ImageIO.write(alphaBlend, "png", alphaImageFile);
             Texture tex = manager.loadAsset(new TextureKey(alphaBlendFileName, false));
@@ -144,9 +174,9 @@ public class AddTerrainAction extends AbstractNewSpatialWizardAction {
             else if (i == 2)
                 mat.setTexture("AlphaMap_2", tex);
         }
-        
-        Texture defaultTexture = manager.loadTexture(TerrainEditorController.DEFAULT_TERRAIN_TEXTURE);
-        
+
+        Texture defaultTexture = manager.loadTexture(TerrainTextureController.DEFAULT_TERRAIN_TEXTURE);
+
         // copy the default texture to the assets folder if it doesn't exist there yet
         String dirtTextureName = "/Textures/dirt.jpg";
         File dirtTextureFile = new File(assetFolder+dirtTextureName);
@@ -158,7 +188,7 @@ public class AddTerrainAction extends AbstractNewSpatialWizardAction {
         Texture dirtTexture = manager.loadTexture(dirtTextureName);
         dirtTexture.setWrap(WrapMode.Repeat);
         mat.setTexture("DiffuseMap", dirtTexture);
-        mat.setFloat("DiffuseMap_0_scale", TerrainEditorController.DEFAULT_TEXTURE_SCALE);
+        mat.setFloat("DiffuseMap_0_scale", TerrainTextureController.DEFAULT_TEXTURE_SCALE);
         mat.setBoolean("WardIso", true);
         mat.setFloat("Shininess", 0.01f);
 
@@ -177,7 +207,7 @@ public class AddTerrainAction extends AbstractNewSpatialWizardAction {
 
         //setNeedsSave(true);
         //addSpatialUndo(parent, (Node)terrain, jmeNodeParent);
-        
+
         return (Spatial)terrain;
     }
 

@@ -49,7 +49,7 @@ import com.jme3.renderer.Camera;
  * Runs in the JME thread, not awt thread.
  * Listens to mouse/camera input and relays the movements
  * to other controllers: editorController, toolController
- * 
+ *
  * @author normenhansen, bowens
  */
 public class TerrainCameraController extends AbstractCameraController {
@@ -85,7 +85,7 @@ public class TerrainCameraController extends AbstractCameraController {
         if (!isTerrainEditButtonEnabled()) {
             return;
         }
-        
+
         // move the marker
         Vector3f pos = getTerrainCollisionPoint();
         if (pos != null) {
@@ -108,20 +108,20 @@ public class TerrainCameraController extends AbstractCameraController {
     protected void checkClick(int button, boolean pressed) {
         checkMouseButtonState(button, pressed);
     }
-    
+
     @Override
     protected void checkDragged(int button, boolean pressed) {
         checkMouseButtonState(button, pressed);
     }
-    
+
     private void checkMouseButtonState(int button, boolean pressed) {
         if (isTerrainEditButtonEnabled() && !forceCameraControls) {
             if (terrainEditToolActivated != pressed)
                 toolController.doTerrainEditToolActionEnded(); // button state change, trigger undo action
             terrainEditToolActivated = pressed;
         }
-        
-        
+
+
         if (button == 0) {
             if (isTerrainEditButtonEnabled() && !forceCameraControls) {
                 toolController.setPrimary(pressed);
@@ -129,11 +129,13 @@ public class TerrainCameraController extends AbstractCameraController {
             } else if (!isTerrainEditButtonEnabled() && !forceCameraControls) {
                 if (!pressed) {
                     Vector3f pick = getTerrainCollisionPoint();
-                    toolController.setCursorLocation(pick);
+
+                    if (pick != null)
+                        toolController.setCursorLocation(pick);
                 }
             }
         }
-        
+
         if (button == 1) {
             if (isTerrainEditButtonEnabled() && !forceCameraControls) {
                 toolController.setAlternate(pressed);
@@ -196,9 +198,9 @@ public class TerrainCameraController extends AbstractCameraController {
      */
     protected Vector3f getTerrainCollisionPoint() {
 
-        if (editorController.getTerrain(null) == null) {
+        /* if (editorController.getTerrain(null) == null) {
             return null;
-        }
+        }*/
 
         CollisionResults results = new CollisionResults();
         Ray ray = new Ray();
@@ -207,14 +209,17 @@ public class TerrainCameraController extends AbstractCameraController {
         dir.subtractLocal(pos).normalizeLocal();
         ray.setOrigin(pos);
         ray.setDirection(dir);
-        editorController.getTerrain(null).collideWith(ray, results);
-        if (results == null) {
-            return null;
-        }
+
+        // editorController.getTerrain(null).collideWith(ray, results);
+        editorController.rootNode.collideWith(ray, results);
+
         final CollisionResult result = results.getClosestCollision();
         if (result == null) {
             return null;
         }
+
+        editorController.setTerrainFromCollision(result);
+
         return result.getContactPoint();
     }
 

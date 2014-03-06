@@ -32,6 +32,7 @@
 package com.jme3.gde.terraineditor.tools;
 
 import com.jme3.gde.core.sceneexplorer.nodes.AbstractSceneExplorerNode;
+import com.jme3.gde.terraineditor.TerrainEditorController;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
@@ -39,16 +40,22 @@ import org.openide.loaders.DataObject;
 
 /**
  * Smooth the terrain by averaging the heights of the surrounding areas.
- * 
+ *
  * @author Brent Owens
  */
 public class SmoothTerrainTool extends TerrainTool {
-    
+
+    private final TerrainEditorController editorController;
+
+    public SmoothTerrainTool(TerrainEditorController controller) {
+        this.editorController = controller;
+    }
+
     @Override
     public void actionPrimary(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         if (radius == 0 || weight == 0)
             return;
-        SmoothTerrainToolAction action = new SmoothTerrainToolAction(point, radius, weight, getMesh());
+        SmoothTerrainToolAction action = new SmoothTerrainToolAction(editorController, point, radius, weight, getMesh());
         action.doActionPerformed(rootNode, dataObject);
     }
 
@@ -56,7 +63,7 @@ public class SmoothTerrainTool extends TerrainTool {
     public void actionSecondary(Vector3f point, int textureIndex, AbstractSceneExplorerNode rootNode, DataObject dataObject) {
         // do nothing
     }
-    
+
     @Override
     public void addMarkerPrimary(Node parent) {
         super.addMarkerPrimary(parent);
